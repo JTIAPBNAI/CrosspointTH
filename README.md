@@ -20,7 +20,7 @@
 SHA-256 ของไฟล์เฟิร์มแวร์:
 
 ```text
-829a8c8b82629724308482bf2519c266de832b72c4f859fccd15186c768d2299  crosspointTH-firmware.bin
+9376157219d76fd2b9dfc3de1d0f4077c5a5210eee814e8138a876e9eb7b27e6  crosspointTH-firmware.bin
 ```
 
 ## จุดเด่นของ crosspointTH
