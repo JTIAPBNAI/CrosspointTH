@@ -32,6 +32,7 @@
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
 #include "ReaderUtils.h"
+#include "ReadingStatsActivity.h"
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -44,6 +45,9 @@ namespace {
 constexpr int PAGE_TURN_RATES[] = {1, 1, 3, 6, 12};
 constexpr size_t initialBookmarkCacheCapacity = 16;
 constexpr float bookmarkProgressEpsilon = 0.0001f;
+constexpr unsigned long MIN_READING_STATS_PAGE_MS = 2000UL;
+constexpr unsigned long MAX_READING_STATS_PAGE_MS = 10UL * 60UL * 1000UL;
+constexpr uint32_t MIN_READING_STATS_SESSION_SECONDS = 60;
 
 int clampPercent(int percent) {
   if (percent < 0) {
@@ -202,12 +206,22 @@ void EpubReaderActivity::onEnter() {
 
   loadCachedBookmarks();
 
+  bookReadingStats = ReadingStatsStore::loadBook(epub->getCachePath());
+  globalReadingStats = ReadingStatsStore::loadGlobal();
+  sessionReadingSeconds = 0;
+  sessionForwardPages = 0;
+  readingStatsTimerRunning = false;
+  bookCompletedThisSession = false;
+  readingStatsDirty = false;
+
   // Trigger first update
   requestUpdate();
 }
 
 void EpubReaderActivity::onExit() {
   Activity::onExit();
+
+  saveReadingStats();
 
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
@@ -235,6 +249,7 @@ void EpubReaderActivity::onExit() {
 }
 
 void EpubReaderActivity::openReaderMenu() {
+  pauseReadingStatsTimer();
   const int currentPage = section ? section->currentPage + 1 : 0;
   const int totalPages = section ? section->estimatedTotalPages() : 0;
   float bookProgress = 0.0f;
@@ -276,6 +291,7 @@ void EpubReaderActivity::openDictionaryWordSelect() {
   orientedMarginTop += SETTINGS.screenMargin;
   orientedMarginLeft += SETTINGS.screenMargin;
 
+  pauseReadingStatsTimer();
   startActivityForResult(std::make_unique<DictionaryWordSelectActivity>(renderer, mappedInput, std::move(page),
                                                                         orientedMarginLeft, orientedMarginTop),
                          [this](const ActivityResult&) { requestUpdate(); });
@@ -366,6 +382,10 @@ void EpubReaderActivity::loop() {
   // finished). If removeReadBooksFromRecents also fired, RecentBooksStore::updatePath in the
   // move path becomes a safe no-op since the entry was already removed.
   if (atEndOfBook) {
+    if (bookReadingStats.finishedBooks == 0 && !bookCompletedThisSession) {
+      bookCompletedThisSession = true;
+      readingStatsDirty = true;
+    }
     pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && !isInReadFolder(epub->getPath());
   } else {
     pendingReadFolderMove = false;
@@ -510,6 +530,7 @@ void EpubReaderActivity::loop() {
       if (currentPageFootnotes.size() == 1) {
         navigateToHref(currentPageFootnotes[0].href, true);
       } else if (currentPageFootnotes.size() > 1) {
+        pauseReadingStatsTimer();
         startActivityForResult(
             std::make_unique<EpubReaderFootnotesActivity>(renderer, mappedInput, currentPageFootnotes),
             [this](const ActivityResult& result) {
@@ -755,6 +776,13 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       openDictionaryWordSelect();
       break;
     }
+    case EpubReaderMenuActivity::MenuAction::READING_STATS: {
+      startActivityForResult(
+          std::make_unique<ReadingStatsActivity>(renderer, mappedInput, epub->getTitle(), previewBookReadingStats(),
+                                                 previewGlobalReadingStats()),
+          [this](const ActivityResult&) { requestUpdate(); });
+      break;
+    }
     case EpubReaderMenuActivity::MenuAction::DISPLAY_QR: {
       if (section && section->currentPage >= 0 && section->currentPage < section->pageCount) {
         std::string fullText = section->getTextFromSectionFile();
@@ -916,6 +944,7 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 }
 
 void EpubReaderActivity::pageTurn(bool isForwardTurn) {
+  pauseReadingStatsTimer(isForwardTurn);
   if (isForwardTurn) {
     // Advance within the section while there are (or may still be) more pages: either a built
     // page ahead, or the section is still building (windowed), in which case more pages exist
@@ -949,6 +978,72 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
   }
   lastPageTurnTime = millis();
   requestUpdate();
+}
+
+void EpubReaderActivity::resumeReadingStatsTimer() {
+  readingStatsPageStartedMs = millis();
+  readingStatsTimerRunning = true;
+}
+
+void EpubReaderActivity::pauseReadingStatsTimer(const bool countForwardPage) {
+  if (!readingStatsTimerRunning) return;
+
+  const unsigned long elapsedMs = millis() - readingStatsPageStartedMs;
+  readingStatsTimerRunning = false;
+  if (elapsedMs < MIN_READING_STATS_PAGE_MS || elapsedMs > MAX_READING_STATS_PAGE_MS) return;
+
+  const uint32_t elapsedSeconds = static_cast<uint32_t>(elapsedMs / 1000UL);
+  sessionReadingSeconds = ReadingStatsCodec::addSaturated(sessionReadingSeconds, elapsedSeconds);
+  if (countForwardPage) {
+    sessionForwardPages = ReadingStatsCodec::addSaturated(sessionForwardPages, 1);
+  }
+  readingStatsDirty = true;
+}
+
+ReadingStatsSnapshot EpubReaderActivity::previewBookReadingStats() const {
+  ReadingStatsSnapshot preview = bookReadingStats;
+  preview.forwardPages = ReadingStatsCodec::addSaturated(preview.forwardPages, sessionForwardPages);
+  if (sessionReadingSeconds >= MIN_READING_STATS_SESSION_SECONDS) {
+    preview.sessions = ReadingStatsCodec::addSaturated(preview.sessions, 1);
+    preview.readingSeconds = ReadingStatsCodec::addSaturated(preview.readingSeconds, sessionReadingSeconds);
+  }
+  if (bookCompletedThisSession) preview.finishedBooks = 1;
+  return preview;
+}
+
+ReadingStatsSnapshot EpubReaderActivity::previewGlobalReadingStats() const {
+  ReadingStatsSnapshot preview = globalReadingStats;
+  preview.forwardPages = ReadingStatsCodec::addSaturated(preview.forwardPages, sessionForwardPages);
+  if (sessionReadingSeconds >= MIN_READING_STATS_SESSION_SECONDS) {
+    preview.sessions = ReadingStatsCodec::addSaturated(preview.sessions, 1);
+    preview.readingSeconds = ReadingStatsCodec::addSaturated(preview.readingSeconds, sessionReadingSeconds);
+  }
+  if (bookCompletedThisSession && bookReadingStats.finishedBooks == 0) {
+    preview.finishedBooks = ReadingStatsCodec::addSaturated(preview.finishedBooks, 1);
+  }
+  return preview;
+}
+
+void EpubReaderActivity::saveReadingStats() {
+  pauseReadingStatsTimer();
+  const bool hasPersistentChange =
+      sessionReadingSeconds >= MIN_READING_STATS_SESSION_SECONDS || sessionForwardPages > 0 || bookCompletedThisSession;
+  if (!readingStatsDirty || !hasPersistentChange || !epub) return;
+
+  const ReadingStatsSnapshot nextBookStats = previewBookReadingStats();
+  const ReadingStatsSnapshot nextGlobalStats = previewGlobalReadingStats();
+  bookReadingStats = nextBookStats;
+  globalReadingStats = nextGlobalStats;
+  if (!ReadingStatsStore::saveBook(epub->getCachePath(), bookReadingStats)) {
+    LOG_ERR("THSTAT", "Failed to save per-book reading stats");
+  }
+  if (!ReadingStatsStore::saveGlobal(globalReadingStats)) {
+    LOG_ERR("THSTAT", "Failed to save global reading stats");
+  }
+  sessionReadingSeconds = 0;
+  sessionForwardPages = 0;
+  bookCompletedThisSession = false;
+  readingStatsDirty = false;
 }
 
 // TODO: Failure handling
@@ -1311,6 +1406,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     const auto start = millis();
     renderContents(std::move(p), orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft);
     LOG_DBG("ERS", "Rendered page in %dms", millis() - start);
+    resumeReadingStatsTimer();
   }
   // Only persist when the position actually changed. render() also runs on menu,
   // bookmark and screenshot re-renders, and writeAtomic is several FAT ops for 6 bytes.
@@ -1653,6 +1749,7 @@ void EpubReaderActivity::renderStatusBar() const {
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
   if (!epub) return;
+  pauseReadingStatsTimer();
 
   // Push current position onto saved stack
   if (savePosition && section && footnoteDepth < MAX_FOOTNOTE_DEPTH) {

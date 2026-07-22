@@ -24,8 +24,10 @@ prefix segmentation that made large Thai files appear frozen.
 Alignment** settings rather than adding Thai-only persistent fields. This keeps settings compatible
 with official firmware and gives EPUB, TXT, and Markdown a consistent control surface.
 
-For justified Thai paragraphs, spare width is distributed at dictionary word boundaries. No tracking
-or letter spacing is added inside a Thai cluster. Paragraph-final lines are not justified.
+For justified Thai paragraphs, spare width may add at most one pixel at each dictionary word boundary.
+This avoids the large visible holes produced by full-width expansion while keeping natural Sarabun
+spacing close to upstream. No tracking or letter spacing is added inside a Thai cluster, and
+paragraph-final lines are not justified.
 
 ## Automated coverage
 
@@ -45,6 +47,16 @@ paragraphs, mixed Thai/Latin text, Markdown headings/lists, and an SD font that 
 - Font fallback preserves readable Thai but may visually differ from the selected Latin font.
 - Markdown support is a lightweight reader subset, not a complete CommonMark implementation.
 - Automated host tests validate shaping decisions but cannot fully replace inspection on an e-ink panel.
+
+## Physical validation log
+
+- 2026-07-22: Thai EPUB content rendered and the device successfully flashed back from the
+  crosspointTH pre-release to official CrossPoint firmware. This validates the documented rollback
+  path for the tested unit; every new firmware artifact still requires its own safety gate and
+  device check.
+- 2026-07-22: Testing identified missing Thai glyphs in the upstream 8-point status font, excessive
+  C90 high-tone height, wide Thai justification gaps, and slow Markdown indexing. These findings are
+  addressed in `v1.4.1-th.2` and remain pending a second on-device visual/performance check.
 
 ## Release safety checklist
 

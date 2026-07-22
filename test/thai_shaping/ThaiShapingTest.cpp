@@ -32,3 +32,10 @@ TEST(ThaiShaping, SelectsHighTierAboveSaraUeAndSaraUee) {
 TEST(ThaiShaping, ReordersSaraAmStackOntoHighTier) {
   EXPECT_EQ(codepoints(ThaiShaping::shapeUtf8("อ่ำ")), (std::vector<uint32_t>{0x0E2D, 0x0E4D, 0xF70A, 0x0E32}));
 }
+
+TEST(ThaiShaping, LowersOnlyHighToneVariantsByFontScale) {
+  EXPECT_EQ(ThaiShaping::highToneLoweringPx(0xF705, 34), 5);
+  EXPECT_EQ(ThaiShaping::highToneLoweringPx(0xF70E, 48), 6);
+  EXPECT_EQ(ThaiShaping::highToneLoweringPx(0xF713, 34), 0);
+  EXPECT_EQ(ThaiShaping::highToneLoweringPx(0x0E48, 34), 0);
+}

@@ -6,6 +6,7 @@
 #include <HalGPIO.h>
 #include <Logging.h>
 #include <SdCardFont.h>
+#include <ThaiShaping.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -353,6 +354,15 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
   if (!glyph) {
     LOG_ERR("GFX", "No glyph for codepoint %d", cp);
     return;
+  }
+
+  if constexpr (rotation == TextRotation::None) {
+    // The C90 high-tone glyph is needed to clear SARA I/II/UE/UEE, but
+    // Sarabun's raw OpenType substitute assumes GPOS anchoring that the
+    // bitmap format cannot retain. Lower it proportionally so a tone over
+    // e.g. "เปลี่ยน" remains above the vowel without floating a full extra
+    // tier. This applies equally to builtin and SD-card Sarabun glyphs.
+    cursorY += ThaiShaping::highToneLoweringPx(cp, fontData->ascender);
   }
 
   const bool is2Bit = fontData->is2Bit;

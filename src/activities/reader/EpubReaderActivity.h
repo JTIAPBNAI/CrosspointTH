@@ -9,6 +9,7 @@
 #include "EndOfBookOptions.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
+#include "ReadingStats.h"
 #include "activities/Activity.h"
 
 class EpubReaderActivity final : public Activity {
@@ -53,6 +54,14 @@ class EpubReaderActivity final : public Activity {
   // Set when the reader is left at end-of-book and SETTINGS.moveFinishedToReadFolder is on.
   // Consumed in onExit() to relocate the finished book into /Read/.
   bool pendingReadFolderMove = false;
+  ReadingStatsSnapshot bookReadingStats;
+  ReadingStatsSnapshot globalReadingStats;
+  uint32_t sessionReadingSeconds = 0;
+  uint32_t sessionForwardPages = 0;
+  unsigned long readingStatsPageStartedMs = 0UL;
+  bool readingStatsTimerRunning = false;
+  bool bookCompletedThisSession = false;
+  bool readingStatsDirty = false;
   // Next-book suggestion menu for the End-of-Book screen
   EndOfBookOptions endOfBookOptions;
 
@@ -129,6 +138,11 @@ class EpubReaderActivity final : public Activity {
   void applyOrientation(uint8_t orientation);
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void pageTurn(bool isForwardTurn);
+  void resumeReadingStatsTimer();
+  void pauseReadingStatsTimer(bool countForwardPage = false);
+  ReadingStatsSnapshot previewBookReadingStats() const;
+  ReadingStatsSnapshot previewGlobalReadingStats() const;
+  void saveReadingStats();
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();

@@ -40,9 +40,10 @@ std::string Txt::getTitle() const {
   size_t lastSlash = filepath.find_last_of('/');
   std::string filename = (lastSlash != std::string::npos) ? filepath.substr(lastSlash + 1) : filepath;
 
-  // Remove .txt extension
-  if (FsHelpers::hasTxtExtension(filename)) {
-    filename.resize(filename.length() - 4);
+  // Remove the reader extension from both plain text and Markdown titles.
+  if (FsHelpers::hasTxtExtension(filename) || FsHelpers::hasMarkdownExtension(filename)) {
+    const size_t dot = filename.find_last_of('.');
+    if (dot != std::string::npos) filename.resize(dot);
   }
 
   return filename;

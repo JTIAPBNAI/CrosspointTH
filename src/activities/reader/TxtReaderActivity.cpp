@@ -6,6 +6,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <MarkdownParser.h>
 #include <Serialization.h>
 #include <ThaiBrk.h>
 #include <ThaiShaping.h>
@@ -24,6 +25,7 @@
 
 namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
+constexpr int MAX_THAI_JUSTIFY_GAP_PX = 1;
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 // Increment when cache format changes. Thai fork: offset +100 from upstream
@@ -182,22 +184,6 @@ void TxtReaderActivity::buildPageIndex() {
 
 namespace {
 
-struct ParsedMarkdownRun {
-  std::string text;
-  EpdFontFamily::Style style = EpdFontFamily::REGULAR;
-};
-
-struct ParsedMarkdownInline {
-  std::string text;
-  std::vector<ParsedMarkdownRun> runs;
-};
-
-uint8_t mdHeadingLevel(const std::string& line) {
-  size_t hashes = 0;
-  while (hashes < line.size() && line[hashes] == '#') ++hashes;
-  return hashes >= 1 && hashes <= 6 && hashes < line.size() && line[hashes] == ' ' ? hashes : 0;
-}
-
 int builtinReaderFontId(const uint8_t size) {
   static constexpr int serif[] = {NOTOSERIF_12_FONT_ID, NOTOSERIF_14_FONT_ID, NOTOSERIF_16_FONT_ID,
                                   NOTOSERIF_18_FONT_ID};
@@ -211,89 +197,6 @@ int mdHeadingFontId(const uint8_t level, const int bodyFontId) {
   const uint8_t base = std::min<uint8_t>(SETTINGS.fontSize, 3);
   const uint8_t bump = level == 1 ? 2 : (level <= 3 ? 1 : 0);
   return builtinReaderFontId(std::min<uint8_t>(base + bump, 3));
-}
-
-// Remove block syntax only. Inline markers remain until parseMarkdownInline,
-// where they become actual style runs rather than merely disappearing.
-std::string mdTransformBlock(const std::string& in, const bool firstSegment) {
-  size_t start = 0;
-  std::string prefix;
-  if (firstSegment) {
-    const uint8_t headingLevel = mdHeadingLevel(in);
-    if (headingLevel != 0) {
-      start = headingLevel + 1;
-    } else if (in.size() >= 2 && (in[0] == '-' || in[0] == '*' || in[0] == '+') && in[1] == ' ') {
-      start = 2;
-      prefix = "\xE2\x80\xA2 ";  // U+2022 bullet
-    } else {
-      // Keep ordered-list numbers, but normalize their following whitespace.
-      size_t digits = 0;
-      while (digits < in.size() && in[digits] >= '0' && in[digits] <= '9') ++digits;
-      if (digits > 0 && digits + 1 < in.size() && in[digits] == '.' && in[digits + 1] == ' ') {
-        prefix.assign(in, 0, digits + 1);
-        prefix += ' ';
-        start = digits + 2;
-      } else if (in.size() >= 2 && in[0] == '>' && in[1] == ' ') {
-        prefix = "\xE2\x94\x82 ";  // U+2502 quote bar
-        start = 2;
-      }
-    }
-  }
-
-  return prefix + in.substr(start);
-}
-
-ParsedMarkdownInline parseMarkdownInline(const std::string& in, const EpdFontFamily::Style baseStyle) {
-  ParsedMarkdownInline parsed;
-  parsed.text.reserve(in.size());
-  bool bold = (baseStyle & EpdFontFamily::BOLD) != 0;
-  bool italic = (baseStyle & EpdFontFamily::ITALIC) != 0;
-  bool code = false;
-
-  const auto append = [&](const std::string& text, ParsedMarkdownInline& result) {
-    if (text.empty()) return;
-    auto style = baseStyle;
-    if (bold || code) style = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::BOLD);
-    if (italic) style = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::ITALIC);
-    if (!result.runs.empty() && result.runs.back().style == style) {
-      result.runs.back().text += text;
-    } else {
-      result.runs.push_back({text, style});
-    }
-    result.text += text;
-  };
-
-  for (size_t i = 0; i < in.size();) {
-    if (i + 1 < in.size() && ((in[i] == '*' && in[i + 1] == '*') || (in[i] == '_' && in[i + 1] == '_'))) {
-      bold = !bold;
-      i += 2;
-      continue;
-    }
-    if (in[i] == '*' || in[i] == '_') {
-      italic = !italic;
-      ++i;
-      continue;
-    }
-    if (in[i] == '`') {
-      code = !code;
-      ++i;
-      continue;
-    }
-    if (in[i] == '[') {
-      const size_t close = in.find(']', i + 1);
-      if (close != std::string::npos && close + 1 < in.size() && in[close + 1] == '(') {
-        const size_t parenClose = in.find(')', close + 2);
-        if (parenClose != std::string::npos) {
-          append(in.substr(i + 1, close - i - 1), parsed);
-          i = parenClose + 1;
-          continue;
-        }
-      }
-    }
-    append(in.substr(i, 1), parsed);
-    ++i;
-  }
-  return parsed;
 }
 
 }  // namespace
@@ -389,7 +292,7 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
     // Markdown state for this source line: header style applies to every
     // wrapped visual line; leading markers are stripped from the first
     // segment only.
-    const uint8_t headingLevel = isMarkdown ? mdHeadingLevel(line) : 0;
+    const uint8_t headingLevel = isMarkdown ? MarkdownParser::headingLevel(line) : 0;
     const auto mdStyle = headingLevel != 0 ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     const int lineFontId = mdHeadingFontId(headingLevel, cachedFontId);
     const int lineAdvance =
@@ -397,12 +300,11 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
         (headingLevel != 0 ? 3 : 0);
     bool mdFirstSegment = true;
     const auto makeDisplayLine = [&](std::string visual, const bool paragraphEnd) {
-      if (isMarkdown) visual = mdTransformBlock(visual, mdFirstSegment);
-      ParsedMarkdownInline parsed;
+      if (isMarkdown) visual = MarkdownParser::transformBlock(visual, mdFirstSegment);
+      MarkdownParser::Inline parsed;
       if (isMarkdown) {
-        parsed = parseMarkdownInline(visual, mdStyle);
+        parsed = MarkdownParser::parseInline(visual, mdStyle);
       } else {
-        parsed.text = visual;
         parsed.runs.push_back({visual, EpdFontFamily::REGULAR});
       }
 
@@ -447,6 +349,10 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
       outLines.push_back(makeDisplayLine(std::move(visual), paragraphEnd));
       usedHeight += lineAdvance;
       mdFirstSegment = false;
+      // A single Markdown source line can contain thousands of Thai
+      // codepoints. Yield while wrapping it so the watchdog and input tasks
+      // keep running even before a complete page has been indexed.
+      if ((outLines.size() % 12) == 0) vTaskDelay(1);
       return true;
     };
 
@@ -461,9 +367,9 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
       // Measure what will actually be drawn: the Markdown-transformed, shaped
       // runs in their real font/style (bold text and headings are wider).
       const auto measure = [&](const std::string& s) {
-        std::string t = isMarkdown ? mdTransformBlock(s, mdFirstSegment) : s;
-        const auto parsed =
-            isMarkdown ? parseMarkdownInline(t, mdStyle) : ParsedMarkdownInline{t, {{t, EpdFontFamily::REGULAR}}};
+        std::string t = isMarkdown ? MarkdownParser::transformBlock(s, mdFirstSegment) : s;
+        const auto parsed = isMarkdown ? MarkdownParser::parseInline(t, mdStyle)
+                                       : MarkdownParser::Inline{{{t, EpdFontFamily::REGULAR}}};
         int width = 0;
         for (const auto& run : parsed.runs) {
           std::string shaped = lineHasThai ? ThaiShaping::shapeUtf8(run.text) : run.text;
@@ -625,7 +531,13 @@ void TxtReaderActivity::renderPage() {
         }
         const bool justifyThai = effectiveAlignment == CrossPointSettings::JUSTIFIED && !line.paragraphEnd &&
                                  line.thaiGapCount > 0 && textWidth < contentWidth;
-        const int thaiGapExtra = justifyThai ? (contentWidth - textWidth) / line.thaiGapCount : 0;
+        // Thai has no visible inter-word spaces. Stretching every dictionary
+        // boundary to fill the full width produced the large holes seen on
+        // device, especially when a line has only a few detected words. Keep
+        // at most a subtle one-pixel adjustment and otherwise retain natural
+        // Sarabun spacing like the upstream reader.
+        const int thaiGapExtra =
+            justifyThai ? std::min(MAX_THAI_JUSTIFY_GAP_PX, (contentWidth - textWidth) / line.thaiGapCount) : 0;
 
         // Apply text alignment
         switch (effectiveAlignment) {

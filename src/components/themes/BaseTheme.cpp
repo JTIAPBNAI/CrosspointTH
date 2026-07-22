@@ -6,6 +6,7 @@
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <ThaiShaping.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -887,6 +888,10 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
 
   // Draw Title
   if (!title.empty()) {
+    // Status-bar titles use the dedicated 8-point font. Shape Thai here (the
+    // EPUB/TXT body has already been shaped during layout) so stacked marks
+    // use the same C90 variants and calibrated vertical placement.
+    title = ThaiShaping::shapeUtf8(std::move(title));
     textY -= textYOffset;
     // Centered chapter title text
     // Page width minus existing content with 30px padding on each side

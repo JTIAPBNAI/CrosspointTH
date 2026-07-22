@@ -25,6 +25,15 @@
 /// provides them (SD-card Thai fonts do).
 namespace ThaiShaping {
 
+/// C90 tone variants above an upper vowel are deliberately high, but their
+/// unmodified bitmap top bearing leaves an oversized gap on the X4 panel.
+/// Return the number of pixels the renderer should move those variants down,
+/// scaled from the owning font's ascender. Other codepoints return zero.
+constexpr int highToneLoweringPx(const uint32_t cp, const int ascender) {
+  if (cp < 0xF705 || cp > 0xF70E) return 0;
+  return ascender > 0 ? (ascender + 7) / 8 : 0;
+}
+
 /// Returns the shaped UTF-8 string. Codepoints outside the Thai block pass
 /// through untouched; the output may be longer than the input (SARA AM).
 std::string shapeUtf8(std::string in);
