@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - '*'
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Tag or commit to build and validate
+        required: true
+        default: v1.4.1-th.1
 
 jobs:
   build-release:
@@ -11,6 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
+          ref: ${{ inputs.release_ref || github.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -46,7 +53,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: crosspointTH-${{ github.ref_name }}
+          name: crosspointTH-${{ inputs.release_ref || github.ref_name }}
           path: |
             crosspointTH-firmware.bin
             SHA256SUMS.txt
