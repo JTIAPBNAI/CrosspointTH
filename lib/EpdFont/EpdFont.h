@@ -12,6 +12,11 @@ class EpdFont {
 
   const EpdGlyph* getGlyph(uint32_t cp) const;
 
+  /// Like getGlyph(), but returns nullptr when the codepoint is genuinely
+  /// absent instead of substituting U+FFFD. Used by the Thai glyph-fallback
+  /// path to detect coverage gaps before switching to a builtin font.
+  const EpdGlyph* getGlyphNoReplacement(uint32_t cp) const;
+
   /// Returns the kerning adjustment (4.4 fixed-point in pixels) between two codepoints.
   /// Returns 0 if no kerning data exists for the pair.
   int8_t getKerning(uint32_t leftCp, uint32_t rightCp) const;

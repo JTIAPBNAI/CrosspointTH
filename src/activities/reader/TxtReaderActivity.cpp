@@ -2,11 +2,16 @@
 
 #include <BidiUtils.h>
 #include <FontCacheManager.h>
+#include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Serialization.h>
+#include <ThaiBrk.h>
+#include <ThaiShaping.h>
 #include <Utf8.h>
+
+#include <cmath>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -21,7 +26,10 @@ namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
-constexpr uint8_t CACHE_VERSION = 3;          // Increment when cache format changes
+// Increment when cache format changes. Thai fork: offset +100 from upstream
+// (Thai-aware wrapping and Markdown transforms change page break offsets), so
+// page-index caches never validate across firmware swaps in either direction.
+constexpr uint8_t CACHE_VERSION = 105;
 }  // namespace
 
 void TxtReaderActivity::onEnter() {
@@ -34,6 +42,8 @@ void TxtReaderActivity::onEnter() {
   ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
 
   txt->setupCacheDir();
+
+  isMarkdown = FsHelpers::hasMarkdownExtension(txt->getPath());
 
   // Save current txt as last opened file and add to recent books
   auto filePath = txt->getPath();
@@ -95,6 +105,8 @@ void TxtReaderActivity::initializeReader() {
   cachedFontId = SETTINGS.getReaderFontId();
   cachedScreenMargin = SETTINGS.screenMargin;
   cachedParagraphAlignment = SETTINGS.paragraphAlignment;
+  cachedLineSpacing = SETTINGS.lineSpacing;
+  cachedLineCompression = SETTINGS.getReaderLineCompression();
 
   // Calculate viewport dimensions
   renderer.getOrientedViewableTRBL(&cachedOrientedMarginTop, &cachedOrientedMarginRight, &cachedOrientedMarginBottom,
@@ -106,8 +118,9 @@ void TxtReaderActivity::initializeReader() {
       std::max(cachedScreenMargin, static_cast<uint8_t>(UITheme::getInstance().getStatusBarHeight()));
 
   viewportWidth = renderer.getScreenWidth() - cachedOrientedMarginLeft - cachedOrientedMarginRight;
-  const int viewportHeight = renderer.getScreenHeight() - cachedOrientedMarginTop - cachedOrientedMarginBottom;
-  const int lineHeight = renderer.getLineHeight(cachedFontId);
+  viewportHeight = renderer.getScreenHeight() - cachedOrientedMarginTop - cachedOrientedMarginBottom;
+  const int lineHeight =
+      std::max(1, static_cast<int>(std::ceil(renderer.getLineHeight(cachedFontId) * cachedLineCompression)));
 
   linesPerPage = viewportHeight / lineHeight;
   if (linesPerPage < 1) linesPerPage = 1;
@@ -140,7 +153,7 @@ void TxtReaderActivity::buildPageIndex() {
   GUI.drawPopup(renderer, tr(STR_INDEXING));
 
   while (offset < fileSize) {
-    std::vector<std::string> tempLines;
+    std::vector<DisplayLine> tempLines;
     size_t nextOffset = offset;
 
     if (!loadPageAtOffset(offset, tempLines, nextOffset)) {
@@ -167,7 +180,126 @@ void TxtReaderActivity::buildPageIndex() {
   LOG_DBG("TRS", "Built page index: %d pages", totalPages);
 }
 
-bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>& outLines, size_t& nextOffset) {
+namespace {
+
+struct ParsedMarkdownRun {
+  std::string text;
+  EpdFontFamily::Style style = EpdFontFamily::REGULAR;
+};
+
+struct ParsedMarkdownInline {
+  std::string text;
+  std::vector<ParsedMarkdownRun> runs;
+};
+
+uint8_t mdHeadingLevel(const std::string& line) {
+  size_t hashes = 0;
+  while (hashes < line.size() && line[hashes] == '#') ++hashes;
+  return hashes >= 1 && hashes <= 6 && hashes < line.size() && line[hashes] == ' ' ? hashes : 0;
+}
+
+int builtinReaderFontId(const uint8_t size) {
+  static constexpr int serif[] = {NOTOSERIF_12_FONT_ID, NOTOSERIF_14_FONT_ID, NOTOSERIF_16_FONT_ID,
+                                  NOTOSERIF_18_FONT_ID};
+  static constexpr int sans[] = {NOTOSANS_12_FONT_ID, NOTOSANS_14_FONT_ID, NOTOSANS_16_FONT_ID,
+                                 NOTOSANS_18_FONT_ID};
+  const uint8_t clamped = std::min<uint8_t>(size, 3);
+  return SETTINGS.fontFamily == CrossPointSettings::NOTOSANS ? sans[clamped] : serif[clamped];
+}
+
+int mdHeadingFontId(const uint8_t level, const int bodyFontId) {
+  if (level == 0) return bodyFontId;
+  const uint8_t base = std::min<uint8_t>(SETTINGS.fontSize, 3);
+  const uint8_t bump = level == 1 ? 2 : (level <= 3 ? 1 : 0);
+  return builtinReaderFontId(std::min<uint8_t>(base + bump, 3));
+}
+
+// Remove block syntax only. Inline markers remain until parseMarkdownInline,
+// where they become actual style runs rather than merely disappearing.
+std::string mdTransformBlock(const std::string& in, const bool firstSegment) {
+  size_t start = 0;
+  std::string prefix;
+  if (firstSegment) {
+    const uint8_t headingLevel = mdHeadingLevel(in);
+    if (headingLevel != 0) {
+      start = headingLevel + 1;
+    } else if (in.size() >= 2 && (in[0] == '-' || in[0] == '*' || in[0] == '+') && in[1] == ' ') {
+      start = 2;
+      prefix = "\xE2\x80\xA2 ";  // U+2022 bullet
+    } else {
+      // Keep ordered-list numbers, but normalize their following whitespace.
+      size_t digits = 0;
+      while (digits < in.size() && in[digits] >= '0' && in[digits] <= '9') ++digits;
+      if (digits > 0 && digits + 1 < in.size() && in[digits] == '.' && in[digits + 1] == ' ') {
+        prefix.assign(in, 0, digits + 1);
+        prefix += ' ';
+        start = digits + 2;
+      } else if (in.size() >= 2 && in[0] == '>' && in[1] == ' ') {
+        prefix = "\xE2\x94\x82 ";  // U+2502 quote bar
+        start = 2;
+      }
+    }
+  }
+
+  return prefix + in.substr(start);
+}
+
+ParsedMarkdownInline parseMarkdownInline(const std::string& in, const EpdFontFamily::Style baseStyle) {
+  ParsedMarkdownInline parsed;
+  parsed.text.reserve(in.size());
+  bool bold = (baseStyle & EpdFontFamily::BOLD) != 0;
+  bool italic = (baseStyle & EpdFontFamily::ITALIC) != 0;
+  bool code = false;
+
+  const auto append = [&](const std::string& text, ParsedMarkdownInline& result) {
+    if (text.empty()) return;
+    auto style = baseStyle;
+    if (bold || code) style = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::BOLD);
+    if (italic) style = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::ITALIC);
+    if (!result.runs.empty() && result.runs.back().style == style) {
+      result.runs.back().text += text;
+    } else {
+      result.runs.push_back({text, style});
+    }
+    result.text += text;
+  };
+
+  for (size_t i = 0; i < in.size();) {
+    if (i + 1 < in.size() && ((in[i] == '*' && in[i + 1] == '*') || (in[i] == '_' && in[i + 1] == '_'))) {
+      bold = !bold;
+      i += 2;
+      continue;
+    }
+    if (in[i] == '*' || in[i] == '_') {
+      italic = !italic;
+      ++i;
+      continue;
+    }
+    if (in[i] == '`') {
+      code = !code;
+      ++i;
+      continue;
+    }
+    if (in[i] == '[') {
+      const size_t close = in.find(']', i + 1);
+      if (close != std::string::npos && close + 1 < in.size() && in[close + 1] == '(') {
+        const size_t parenClose = in.find(')', close + 2);
+        if (parenClose != std::string::npos) {
+          append(in.substr(i + 1, close - i - 1), parsed);
+          i = parenClose + 1;
+          continue;
+        }
+      }
+    }
+    append(in.substr(i, 1), parsed);
+    ++i;
+  }
+  return parsed;
+}
+
+}  // namespace
+
+bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>& outLines, size_t& nextOffset) {
   outLines.clear();
   const size_t fileSize = txt->getFileSize();
 
@@ -197,13 +329,17 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
   // corrupts FreeRTOS state. The advance table persists across calls per
   // font, so the cost amortizes to ~ASCII-size after the first chunk.
   if (renderer.isSdCardFont(cachedFontId)) {
-    renderer.ensureSdCardFontReady(cachedFontId, reinterpret_cast<const char*>(buffer), /*styleMask=*/0x01);
+    // Markdown headers render bold, so prewarm the bold style too.
+    renderer.ensureSdCardFontReady(cachedFontId, reinterpret_cast<const char*>(buffer),
+                                   /*styleMask=*/isMarkdown ? 0x03 : 0x01);
   }
 
   // Parse lines from buffer
   size_t pos = 0;
+  int usedHeight = 0;
+  bool pageFull = false;
 
-  while (pos < chunkSize && static_cast<int>(outLines.size()) < linesPerPage) {
+  while (pos < chunkSize && !pageFull) {
     // Find end of line
     size_t lineEnd = pos;
     while (lineEnd < chunkSize && buffer[lineEnd] != '\n') {
@@ -228,49 +364,171 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
     // Extract line content for display (without CR/LF)
     std::string line(reinterpret_cast<char*>(buffer + pos), displayLen);
 
+    // Decode/break the source line once. The old wrap loop repeated Thai
+    // dictionary segmentation and then re-measured successively shorter UTF-8
+    // prefixes, making indexing roughly quadratic for long space-less Thai
+    // paragraphs. These offsets stay in source-byte coordinates while `line`
+    // is sliced below.
+    const bool sourceLineHasThai = ThaiBrk::containsThai(line);
+    const std::vector<size_t> sourceThaiBreaks =
+        sourceLineHasThai ? ThaiBrk::wordBreakByteOffsets(line) : std::vector<size_t>{};
+    std::vector<size_t> sourceCharEnds;
+    sourceCharEnds.reserve(line.size() / (sourceLineHasThai ? 3 : 1));
+    const auto* charPtr = reinterpret_cast<const unsigned char*>(line.c_str());
+    const auto* const lineStart = charPtr;
+    while (*charPtr) {
+      utf8NextCodepoint(&charPtr);
+      sourceCharEnds.push_back(static_cast<size_t>(charPtr - lineStart));
+    }
+
     // Track position within this source line (in bytes from pos)
     size_t lineBytePos = 0;
+
+    // Shaping runs only on display copies, keeping the source byte offsets used
+    // by pagination and the one-time dictionary break table valid.
+    const bool lineHasThai = sourceLineHasThai;
+    // Markdown state for this source line: header style applies to every
+    // wrapped visual line; leading markers are stripped from the first
+    // segment only.
+    const uint8_t headingLevel = isMarkdown ? mdHeadingLevel(line) : 0;
+    const auto mdStyle = headingLevel != 0 ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    const int lineFontId = mdHeadingFontId(headingLevel, cachedFontId);
+    const int lineAdvance =
+        std::max(1, static_cast<int>(std::ceil(renderer.getLineHeight(lineFontId) * cachedLineCompression))) +
+        (headingLevel != 0 ? 3 : 0);
+    bool mdFirstSegment = true;
+    const auto makeDisplayLine = [&](std::string visual, const bool paragraphEnd) {
+      if (isMarkdown) visual = mdTransformBlock(visual, mdFirstSegment);
+      ParsedMarkdownInline parsed;
+      if (isMarkdown) {
+        parsed = parseMarkdownInline(visual, mdStyle);
+      } else {
+        parsed.text = visual;
+        parsed.runs.push_back({visual, EpdFontFamily::REGULAR});
+      }
+
+      DisplayLine display;
+      display.fontId = lineFontId;
+      display.style = mdStyle;
+      display.headingLevel = headingLevel;
+      display.advanceY = lineAdvance;
+      display.paragraphEnd = paragraphEnd;
+      display.runs.reserve(parsed.runs.size());
+      for (auto& run : parsed.runs) {
+        if (!lineHasThai) {
+          display.text += run.text;
+          display.runs.push_back({std::move(run.text), static_cast<uint8_t>(run.style), false});
+          continue;
+        }
+
+        // Preserve dictionary word boundaries as render-run metadata. Natural
+        // Thai text keeps zero added space at these boundaries; Justify uses
+        // them as the only stretch points, never splitting a consonant/vowel/
+        // tone-mark cluster.
+        const auto breakOffsets = ThaiBrk::wordBreakByteOffsets(run.text);
+        size_t tokenStart = 0;
+        for (const size_t breakOffset : breakOffsets) {
+          if (breakOffset <= tokenStart || breakOffset > run.text.size()) continue;
+          std::string token = ThaiShaping::shapeUtf8(run.text.substr(tokenStart, breakOffset - tokenStart));
+          display.text += token;
+          display.runs.push_back({std::move(token), static_cast<uint8_t>(run.style), true});
+          ++display.thaiGapCount;
+          tokenStart = breakOffset;
+        }
+        if (tokenStart < run.text.size()) {
+          std::string token = ThaiShaping::shapeUtf8(run.text.substr(tokenStart));
+          display.text += token;
+          display.runs.push_back({std::move(token), static_cast<uint8_t>(run.style), false});
+        }
+      }
+      return display;
+    };
+    const auto pushDisplayLine = [&](std::string visual, const bool paragraphEnd = false) {
+      if (usedHeight + lineAdvance > viewportHeight && !outLines.empty()) return false;
+      outLines.push_back(makeDisplayLine(std::move(visual), paragraphEnd));
+      usedHeight += lineAdvance;
+      mdFirstSegment = false;
+      return true;
+    };
 
     // Emit at least one visual line for each source line (including blank lines),
     // then continue with wrapping when needed.
     do {
       if (line.empty()) {
-        outLines.emplace_back();
+        if (!pushDisplayLine({}, true)) pageFull = true;
         break;
       }
 
-      int lineWidth = renderer.getTextAdvanceX(cachedFontId, line.c_str(), EpdFontFamily::REGULAR);
+      // Measure what will actually be drawn: the Markdown-transformed, shaped
+      // runs in their real font/style (bold text and headings are wider).
+      const auto measure = [&](const std::string& s) {
+        std::string t = isMarkdown ? mdTransformBlock(s, mdFirstSegment) : s;
+        const auto parsed = isMarkdown ? parseMarkdownInline(t, mdStyle)
+                                       : ParsedMarkdownInline{t, {{t, EpdFontFamily::REGULAR}}};
+        int width = 0;
+        for (const auto& run : parsed.runs) {
+          std::string shaped = lineHasThai ? ThaiShaping::shapeUtf8(run.text) : run.text;
+          width += renderer.getTextAdvanceX(lineFontId, shaped.c_str(), run.style);
+        }
+        return width;
+      };
+
+      int lineWidth = measure(line);
 
       if (lineWidth <= viewportWidth) {
-        outLines.push_back(line);
+        if (!pushDisplayLine(line, true)) {
+          pageFull = true;
+          break;
+        }
         lineBytePos = displayLen;  // Consumed entire display content
         line.clear();
         break;
       }
 
-      // Find break point
-      size_t breakPos = line.length();
-      while (breakPos > 0 && renderer.getTextAdvanceX(cachedFontId, line.substr(0, breakPos).c_str(),
-                                                      EpdFontFamily::REGULAR) > viewportWidth) {
-        // Try to break at space
-        size_t spacePos = line.rfind(' ', breakPos - 1);
-        if (spacePos != std::string::npos && spacePos > 0) {
-          breakPos = spacePos;
+      // Binary-search the largest UTF-8 prefix that fits. Measurement shapes
+      // the candidate, so reducing O(codepoints) trials to O(log codepoints)
+      // is the main indexing-speed win for Thai files.
+      auto firstEnd = std::upper_bound(sourceCharEnds.begin(), sourceCharEnds.end(), lineBytePos);
+      size_t low = static_cast<size_t>(firstEnd - sourceCharEnds.begin());
+      size_t high = sourceCharEnds.size();
+      size_t fittingEnd = lineBytePos;
+      while (low < high) {
+        const size_t mid = low + (high - low) / 2;
+        const size_t candidateEnd = sourceCharEnds[mid];
+        if (measure(line.substr(0, candidateEnd - lineBytePos)) <= viewportWidth) {
+          fittingEnd = candidateEnd;
+          low = mid + 1;
         } else {
-          // Break at character boundary for UTF-8
-          breakPos--;
-          // Make sure we don't break in the middle of a UTF-8 sequence
-          while (breakPos > 0 && (line[breakPos] & 0xC0) == 0x80) {
-            breakPos--;
-          }
+          high = mid;
         }
       }
-
-      if (breakPos == 0) {
-        breakPos = 1;
+      size_t fittingBytes = fittingEnd > lineBytePos ? fittingEnd - lineBytePos : 0;
+      if (fittingBytes == 0 && firstEnd != sourceCharEnds.end()) {
+        fittingBytes = *firstEnd - lineBytePos;  // always consume one complete codepoint
       }
 
-      outLines.push_back(line.substr(0, breakPos));
+      // Prefer the latest natural boundary that fits: an ASCII space or Thai
+      // dictionary word boundary. Fall back to the UTF-8 character boundary
+      // only for a single overlong word/OOV cluster.
+      size_t breakPos = 0;
+      if (fittingBytes > 0) {
+        const size_t spacePos = line.rfind(' ', fittingBytes - 1);
+        if (spacePos != std::string::npos && spacePos > 0) breakPos = spacePos;
+      }
+      if (lineHasThai) {
+        for (const size_t absoluteBreak : sourceThaiBreaks) {
+          if (absoluteBreak <= lineBytePos) continue;
+          const size_t relativeBreak = absoluteBreak - lineBytePos;
+          if (relativeBreak > fittingBytes) break;
+          if (relativeBreak > breakPos) breakPos = relativeBreak;
+        }
+      }
+      if (breakPos == 0) breakPos = fittingBytes;
+
+      if (!pushDisplayLine(line.substr(0, breakPos))) {
+        pageFull = true;
+        break;
+      }
 
       // Skip space at break point
       size_t skipChars = breakPos;
@@ -279,7 +537,7 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
       }
       lineBytePos += skipChars;
       line = line.substr(skipChars);
-    } while (!line.empty() && static_cast<int>(outLines.size()) < linesPerPage);
+    } while (!line.empty() && !pageFull);
 
     // Determine how much of the source buffer we consumed
     if (line.empty()) {
@@ -346,22 +604,29 @@ void TxtReaderActivity::render(RenderLock&&) {
 }
 
 void TxtReaderActivity::renderPage() {
-  const int lineHeight = renderer.getLineHeight(cachedFontId);
   const int contentWidth = viewportWidth;
 
   // Render text lines with alignment
   auto renderLines = [&]() {
     int y = cachedOrientedMarginTop;
-    for (const auto& line : currentPageLines) {
-      if (!line.empty()) {
+    for (size_t lineIdx = 0; lineIdx < currentPageLines.size(); ++lineIdx) {
+      const auto& line = currentPageLines[lineIdx];
+      if (!line.text.empty()) {
         int x = cachedOrientedMarginLeft;
-        const bool lineIsRtl = BidiUtils::startsWithRtl(line.c_str(), BidiUtils::RTL_PARAGRAPH_PROBE_DEPTH);
+        const bool lineIsRtl = BidiUtils::startsWithRtl(line.text.c_str(), BidiUtils::RTL_PARAGRAPH_PROBE_DEPTH);
         uint8_t effectiveAlignment = cachedParagraphAlignment;
         if (lineIsRtl && (effectiveAlignment == CrossPointSettings::LEFT_ALIGN ||
                           effectiveAlignment == CrossPointSettings::JUSTIFIED)) {
           effectiveAlignment = CrossPointSettings::RIGHT_ALIGN;
         }
-        const int textWidth = renderer.getTextAdvanceX(cachedFontId, line.c_str(), EpdFontFamily::REGULAR);
+        int textWidth = 0;
+        for (const auto& run : line.runs) {
+          textWidth += renderer.getTextAdvanceX(line.fontId, run.text.c_str(),
+                                                static_cast<EpdFontFamily::Style>(run.style));
+        }
+        const bool justifyThai = effectiveAlignment == CrossPointSettings::JUSTIFIED && !line.paragraphEnd &&
+                                 line.thaiGapCount > 0 && textWidth < contentWidth;
+        const int thaiGapExtra = justifyThai ? (contentWidth - textWidth) / line.thaiGapCount : 0;
 
         // Apply text alignment
         switch (effectiveAlignment) {
@@ -383,9 +648,14 @@ void TxtReaderActivity::renderPage() {
             break;
         }
 
-        renderer.drawText(cachedFontId, x, y, line.c_str());
+        for (const auto& run : line.runs) {
+          const auto style = static_cast<EpdFontFamily::Style>(run.style);
+          renderer.drawText(line.fontId, x, y, run.text.c_str(), true, style);
+          x += renderer.getTextAdvanceX(line.fontId, run.text.c_str(), style);
+          if (run.thaiBreakAfter) x += thaiGapExtra;
+        }
       }
-      y += lineHeight;
+      y += line.advanceY > 0 ? line.advanceY : renderer.getLineHeight(cachedFontId);
     }
   };
 
@@ -454,6 +724,7 @@ bool TxtReaderActivity::loadPageIndexCache() {
   // - int32_t: font ID (to invalidate cache on font change)
   // - int32_t: screen margin (to invalidate cache on margin change)
   // - uint8_t: paragraph alignment (to invalidate cache on alignment change)
+  // - uint8_t: line spacing (to invalidate cache on vertical rhythm change)
   // - uint32_t: total pages count
   // - N * uint32_t: page offsets
 
@@ -521,6 +792,13 @@ bool TxtReaderActivity::loadPageIndexCache() {
     return false;
   }
 
+  uint8_t lineSpacing;
+  serialization::readPod(f, lineSpacing);
+  if (lineSpacing != cachedLineSpacing) {
+    LOG_DBG("TRS", "Cache line spacing mismatch (%d != %d), rebuilding", lineSpacing, cachedLineSpacing);
+    return false;
+  }
+
   uint32_t numPages;
   serialization::readPod(f, numPages);
 
@@ -556,6 +834,7 @@ void TxtReaderActivity::savePageIndexCache() const {
   serialization::writePod(f, static_cast<int32_t>(cachedFontId));
   serialization::writePod(f, static_cast<int32_t>(cachedScreenMargin));
   serialization::writePod(f, cachedParagraphAlignment);
+  serialization::writePod(f, cachedLineSpacing);
   serialization::writePod(f, static_cast<uint32_t>(pageOffsets.size()));
 
   // Write page offsets

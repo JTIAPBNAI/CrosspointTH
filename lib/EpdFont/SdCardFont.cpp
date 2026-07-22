@@ -1119,17 +1119,18 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 
     uint32_t needCount = 0;
     uint32_t missedThisStyle = 0;
-    const int32_t replacementIdx = findGlobalGlyphIndex(s, REPLACEMENT_GLYPH);
     for (uint32_t i = 0; i < cpCount; i++) {
       const uint32_t cp = codepoints[i];
       if (advanceTableLookup(si, cp, nullptr)) continue;  // already cached
       int32_t idx = findGlobalGlyphIndex(s, cp);
       if (idx < 0) {
-        if (replacementIdx < 0) {
-          missedThisStyle++;
-          continue;
-        }
-        idx = replacementIdx;
+        // Do not cache the replacement glyph's advance under a missing
+        // codepoint. GfxRenderer treats an absent advance-table entry as a
+        // coverage miss and asks EpdFontFamily::resolveGlyph(), which can then
+        // select the builtin Thai fallback. Aliasing the missing codepoint to
+        // U+FFFD here hid that miss and made measurement disagree with drawing.
+        missedThisStyle++;
+        continue;
       }
       mappings[needCount].codepoint = cp;
       mappings[needCount].glyphIndex = idx;

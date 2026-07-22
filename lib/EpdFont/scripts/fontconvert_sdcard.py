@@ -54,6 +54,12 @@ INTERVAL_PRESETS = {
                     (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0xFF00, 0xFFEF)],
     "hangul":      [(0xAC00, 0xD7AF), (0x1100, 0x11FF), (0x3130, 0x318F)],
     "cherokee":    [(0x13A0, 0x13FF), (0xAB70, 0xABBF)],
+    # Thai block plus the C90 PUA variant glyphs (lowered tone marks,
+    # left-shifted upper vowels, descender-less YO YING / THO THAN) used by
+    # the firmware's Thai shaping pass. Encode the PUA glyphs into the font
+    # first with scripts/thai_pua_patch.py if the source font ships them
+    # unencoded (Google Fonts strips PUA cmap entries).
+    "thai":        [(0x0E00, 0x0E7F), (0xF700, 0xF71A)],
     "tifinagh":    [(0x2D30, 0x2D7F)],
     # Symbol blocks commonly seen in scifi/popsci/literary fiction.
 

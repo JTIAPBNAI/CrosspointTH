@@ -90,7 +90,7 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build CrossPoint
+      - name: Build crosspointTH
         # Both envs in ONE pio invocation: a second `pio run` can wipe the whole
         # .pio/build tree (project-checksum mismatch after the S3 toolchain
         # installs into the restored cache), deleting the default firmware.bin
@@ -113,10 +113,10 @@ jobs:
             if [ -n "$flash_line" ]; then echo "- ${flash_line}"; else echo "- Flash: not found"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload firmware.bin artifact
+      - name: Upload crosspointTH development firmware artifact
         uses: actions/upload-artifact@v6
         with:
-          name: firmware.bin
+          name: crosspointTH-development-firmware
           path: .pio/build/default/firmware.bin
           if-no-files-found: error
 

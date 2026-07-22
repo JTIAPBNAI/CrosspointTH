@@ -1,8 +1,13 @@
-# CrossPoint User Guide
+# crosspointTH User Guide
 
-Welcome to the **CrossPoint** firmware. This guide outlines the hardware controls, navigation, and reading features of the device.
+Welcome to **crosspointTH**, the Thai community edition maintained by **JTIAPBN.Ai** and based on
+CrossPoint Reader. This guide outlines the hardware controls, navigation, and reading features of the device.
 
-- [CrossPoint User Guide](#crosspoint-user-guide)
+Thai readers should also see the [Thai quick-start guide](./README-TH.md) and
+[Thai implementation notes](./docs/THAI_SUPPORT.md). Names such as “CrossPoint Plugin” and network
+identifiers remain unchanged where compatibility with upstream tools requires them.
+
+- [crosspointTH User Guide](#crosspointth-user-guide)
   - [1. Hardware Overview](#1-hardware-overview)
     - [Button Layout](#button-layout)
     - [Taking a Screenshot](#taking-a-screenshot)
@@ -43,7 +48,7 @@ Welcome to the **CrossPoint** firmware. This guide outlines the hardware control
     - [Tilt Page Turn (X3 only)](#tilt-page-turn-x3-only)
     - [Footnote Navigation](#footnote-navigation)
     - [System Navigation](#system-navigation)
-    - [Supported Languages](#supported-languages)
+    - [Supported Languages and Thai Text](#supported-languages-and-thai-text)
   - [5. Reader Menu](#5-reader-menu)
     - [5.1 Chapter Selection](#51-chapter-selection)
     - [5.2 Bookmarks](#52-bookmarks)
@@ -588,7 +593,21 @@ If the device goes to sleep or you close the book while viewing a footnote, the 
 * **Reader Menu:** Press **Confirm** to open the **[Reader Menu](#5-reader-menu)**, which includes chapter navigation, reading options, and more.
 * **Long-press Confirm (configurable):** Holding **Confirm** runs the function chosen by the **Long-press Menu** setting in **[Controls Settings](#363-controls)** — "Bookmark" (default) drops a bookmark, "KOSync" launches KOReader Sync, "Dictionary" starts a word lookup, "Disabled" does nothing. A short press always opens the Reader Menu.
 
-### Supported Languages
+### Supported Languages and Thai Text
+
+The Thai edition includes a Thai interface, built-in Thai font coverage, Thai dictionary word
+breaking, and shaping for stacked upper vowels and tone marks. It also provides Thai fallback when
+the selected SD-card font has no Thai glyphs.
+
+For Thai TXT/Markdown and EPUB content:
+
+- **Reader Line Spacing** controls vertical space without separating marks from their base glyph.
+- **Reader Paragraph Alignment → Justified** expands dictionary word boundaries, not positions
+  inside consonant/vowel/tone clusters.
+- Markdown headings, bold, italic, inline code, lists, quotes, and link text have distinct formatting.
+
+Word breaking can still be ambiguous for proper nouns or new technical terms; this is a language
+limitation rather than a device lock-up. See [Thai support](./docs/THAI_SUPPORT.md) for details.
 
 CrossPoint renders text using the following Unicode character blocks, enabling support for a wide range of languages:
 

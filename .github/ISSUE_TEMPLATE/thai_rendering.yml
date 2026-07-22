@@ -1,0 +1,65 @@
+name: Thai rendering problem
+description: Report Thai glyph, shaping, word breaking, indexing, or Markdown layout problems
+title: "[Thai] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ขอบคุณที่ช่วยทดสอบ crosspointTH โปรดอย่าแนบหนังสือที่มีลิขสิทธิ์ทั้งเล่ม ใช้ข้อความตัวอย่างสั้นที่สุดที่ทำให้เกิดปัญหา
+  - type: input
+    id: version
+    attributes:
+      label: crosspointTH version / SHA-256
+      placeholder: 1.4.1-th.1 / 0f6b1f...
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Xteink X3
+        - Xteink X4
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: File format
+      options:
+        - EPUB
+        - TXT
+        - Markdown (MD)
+        - User interface
+    validations:
+      required: true
+  - type: input
+    id: font
+    attributes:
+      label: Font family and size
+      placeholder: Noto Serif 14 / SD font name
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Alignment and line spacing
+      placeholder: Justified, Normal
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal Thai text or Markdown that reproduces the problem
+      description: Include the exact characters, including Markdown punctuation.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Actual and expected result
+      description: Explain what floats, overlaps, wraps, formats, or indexes incorrectly. Attach a clear photo if possible.
+    validations:
+      required: true

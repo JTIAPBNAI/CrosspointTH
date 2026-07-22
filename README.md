@@ -1,4 +1,26 @@
-# CrossPoint Reader
+# crosspointTH
+
+**Thai community edition maintained and modified by [JTIAPBN.Ai](./ATTRIBUTION.md), based on
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).**
+
+`crosspointTH` adds built-in Thai fonts and fallback glyphs, Thai word breaking and stacked-mark
+shaping, fast Thai indexing, Thai UI translation, real Markdown formatting, and Thai-aware text
+justification. It targets the same Xteink X3/X4 hardware and deliberately retains the upstream
+partition layout, bootloader, HAL, power management, display driver, OTA/SD flashing code, and
+technical protocol identifiers.
+
+- [คู่มือภาษาไทยและวิธีติดตั้ง](./README-TH.md)
+- [Thai implementation and test notes](./docs/THAI_SUPPORT.md)
+- [Changes in this edition](./CHANGELOG-crosspointTH.md)
+- [Upstream attribution and licenses](./ATTRIBUTION.md)
+- [Third-party font and dictionary notices](./THIRD_PARTY_NOTICES.md)
+
+> [!IMPORTANT]
+> This is a community fork, not an official CrossPoint Reader release. Keep a copy of an official
+> upstream firmware before flashing. The Thai release image writes the app partition only and can
+> be replaced with the official firmware using the original supported flashing paths.
+
+## Upstream project
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
 
@@ -152,8 +174,8 @@ Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` 
 ### Setup
 
 ```bash
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-cd crosspoint-reader
+git clone --recursive https://github.com/YOUR_GITHUB_USERNAME/crosspointTH.git
+cd crosspointTH
 
 # if cloned without --recursive:
 git submodule update --init --recursive

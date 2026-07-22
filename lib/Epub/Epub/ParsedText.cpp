@@ -3,6 +3,8 @@
 #include <BidiUtils.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <ThaiBrk.h>
+#include <ThaiShaping.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -306,6 +308,36 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
     wordNoSpaceBefore.reserve(newCapacity);
     wordIsFocusSuffix.reserve(newCapacity);
   };
+
+  if (ThaiBrk::containsThai(word)) {
+    // Thai: dictionary word boundaries become break opportunities (rendered
+    // without a space, like the CJK path below). Segmentation runs on the raw
+    // text; each token is then shaped (sara-am decomposition, PUA contextual
+    // variants) so measurement, section cache, and rendering all agree. The
+    // breaker never splits inside a grapheme cluster, so shaping context stays
+    // intact per token.
+    const auto breakOffsets = ThaiBrk::wordBreakByteOffsets(word);
+    ensureTokenCapacity(breakOffsets.size() + 1);
+    bool firstToken = true;
+    size_t tokenStart = 0;
+    const auto pushShapedThaiToken = [&](std::string token) {
+      pushToken(ThaiShaping::shapeUtf8(std::move(token)), firstToken ? effectiveAttachToPrevious : false,
+                firstToken ? effectiveNoSpaceBefore : true, false);
+      firstToken = false;
+    };
+    for (const size_t breakOffset : breakOffsets) {
+      if (breakOffset <= tokenStart || breakOffset > word.size()) continue;
+      pushShapedThaiToken(word.substr(tokenStart, breakOffset - tokenStart));
+      tokenStart = breakOffset;
+    }
+    if (tokenStart < word.size()) {
+      pushShapedThaiToken(word.substr(tokenStart));
+    }
+    if (wordStartsRtl) {
+      hasRtlWord = true;
+    }
+    return;
+  }
 
   if (auto breakOffsets = cjkCharacterBreakByteOffsets(word); !breakOffsets.empty()) {
     // CJK-heavy paragraphs can push hundreds of tiny tokens quickly when CSS toggles

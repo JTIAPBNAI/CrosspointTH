@@ -70,6 +70,10 @@ bool SdCardFontManager::loadFamily(const SdCardFontFamilyInfo& family, GfxRender
           fontId, font->styleCount(), fontSizeEnum);
 
   EpdFontFamily fontFamily(font->getEpdFont(0), font->getEpdFont(1), font->getEpdFont(2), font->getEpdFont(3));
+  // SD-card fonts converted without Thai coverage borrow Thai + C90 PUA glyphs
+  // from the builtin Thai-capable family of the nearest point size, so Thai
+  // text never degrades to U+FFFD just because a Latin-only font is selected.
+  fontFamily.setThaiFallback(EpdFontFamily::builtinThaiFallback(selected->pointSize));
   renderer.insertFont(fontId, fontFamily);
 
   loadedFamilyName_ = family.name;

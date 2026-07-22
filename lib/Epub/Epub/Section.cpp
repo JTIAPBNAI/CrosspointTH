@@ -17,7 +17,11 @@ namespace {
 // v30: Arabic shaping changed both drawing and measurement (getTextAdvanceX now
 //      measures the shaped visual text); cached word positions from v29 no longer
 //      match what drawText renders.
-constexpr uint8_t SECTION_FILE_VERSION = 31;
+// v131 (Thai fork): Thai word segmentation + WTT2/C90 contextual shaping change
+//      tokenization and store PUA codepoints in the word arena. Offset by +100
+//      from upstream so caches never validate across firmware swaps in either
+//      direction (rollback to stock CrossPoint simply re-indexes books).
+constexpr uint8_t SECTION_FILE_VERSION = 131;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
