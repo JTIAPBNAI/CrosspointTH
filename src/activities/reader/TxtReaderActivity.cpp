@@ -201,8 +201,7 @@ uint8_t mdHeadingLevel(const std::string& line) {
 int builtinReaderFontId(const uint8_t size) {
   static constexpr int serif[] = {NOTOSERIF_12_FONT_ID, NOTOSERIF_14_FONT_ID, NOTOSERIF_16_FONT_ID,
                                   NOTOSERIF_18_FONT_ID};
-  static constexpr int sans[] = {NOTOSANS_12_FONT_ID, NOTOSANS_14_FONT_ID, NOTOSANS_16_FONT_ID,
-                                 NOTOSANS_18_FONT_ID};
+  static constexpr int sans[] = {NOTOSANS_12_FONT_ID, NOTOSANS_14_FONT_ID, NOTOSANS_16_FONT_ID, NOTOSANS_18_FONT_ID};
   const uint8_t clamped = std::min<uint8_t>(size, 3);
   return SETTINGS.fontFamily == CrossPointSettings::NOTOSANS ? sans[clamped] : serif[clamped];
 }
@@ -463,8 +462,8 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
       // runs in their real font/style (bold text and headings are wider).
       const auto measure = [&](const std::string& s) {
         std::string t = isMarkdown ? mdTransformBlock(s, mdFirstSegment) : s;
-        const auto parsed = isMarkdown ? parseMarkdownInline(t, mdStyle)
-                                       : ParsedMarkdownInline{t, {{t, EpdFontFamily::REGULAR}}};
+        const auto parsed =
+            isMarkdown ? parseMarkdownInline(t, mdStyle) : ParsedMarkdownInline{t, {{t, EpdFontFamily::REGULAR}}};
         int width = 0;
         for (const auto& run : parsed.runs) {
           std::string shaped = lineHasThai ? ThaiShaping::shapeUtf8(run.text) : run.text;
@@ -621,8 +620,8 @@ void TxtReaderActivity::renderPage() {
         }
         int textWidth = 0;
         for (const auto& run : line.runs) {
-          textWidth += renderer.getTextAdvanceX(line.fontId, run.text.c_str(),
-                                                static_cast<EpdFontFamily::Style>(run.style));
+          textWidth +=
+              renderer.getTextAdvanceX(line.fontId, run.text.c_str(), static_cast<EpdFontFamily::Style>(run.style));
         }
         const bool justifyThai = effectiveAlignment == CrossPointSettings::JUSTIFIED && !line.paragraphEnd &&
                                  line.thaiGapCount > 0 && textWidth < contentWidth;

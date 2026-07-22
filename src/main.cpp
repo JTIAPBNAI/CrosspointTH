@@ -19,9 +19,9 @@
 
 #include <cstring>
 
+#include "Branding.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
-#include "Branding.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -366,8 +366,8 @@ void setup() {
   }
 
   // First serial output only here to avoid timing inconsistencies for power button press duration verification
-  LOG_DBG("MAIN", "Starting " CROSSPOINTTH_NAME " version " CROSSPOINTTH_EDITION_VERSION " by "
-                  CROSSPOINTTH_MAINTAINER);
+  LOG_DBG("MAIN",
+          "Starting " CROSSPOINTTH_NAME " version " CROSSPOINTTH_EDITION_VERSION " by " CROSSPOINTTH_MAINTAINER);
 
   // Resolve the single boot-presentation decision. Skipping the splash also
   // skips the panel-clearing pass and the X3 initial-full-sync arming (see

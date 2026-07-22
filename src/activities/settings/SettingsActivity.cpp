@@ -1,7 +1,5 @@
 #include "SettingsActivity.h"
 
-#include "Branding.h"
-
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
@@ -10,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "Branding.h"
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
 #include "CrossPointSettings.h"

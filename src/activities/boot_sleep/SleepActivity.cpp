@@ -8,9 +8,9 @@
 #include <Txt.h>
 #include <Xtc.h>
 
+#include "Branding.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
-#include "Branding.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
