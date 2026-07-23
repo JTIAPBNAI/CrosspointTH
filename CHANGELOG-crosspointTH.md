@@ -1,6 +1,6 @@
 # crosspointTH changelog
 
-## Unreleased
+## 1.4.1-th.3 — 2026-07-23
 
 - Added GitHub-style Markdown pipe-table parsing for `.md` books.
 - Rendered table headers and cells as stacked, labeled fields that fit the narrow Xteink display.

@@ -18,7 +18,7 @@ Thai word breaking uses an embedded dictionary. TXT/Markdown indexing segments e
 once and reuses the resulting boundaries while fitting display lines. This avoids the repeated
 prefix segmentation that made large Thai files appear frozen.
 
-Development builds after `v1.4.1-th.2` recognize GitHub-style Markdown pipe tables. Because a rigid
+Starting with `v1.4.1-th.3`, the reader recognizes GitHub-style Markdown pipe tables. Because a rigid
 grid is not readable on the narrow Xteink display, each row is rendered as stacked fields with bold
 column labels. Alignment markers are accepted, the separator row is hidden, escaped pipes and pipes
 inside inline code remain part of their cell, and an expanded row is kept together when a page has
