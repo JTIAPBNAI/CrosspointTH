@@ -40,7 +40,19 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 [เอกสารระบบภาษาไทย](./docs/THAI_SUPPORT.md) และ
 [ผลการประเมินฟีเจอร์จาก CrossInk](./docs/CROSSINK_REVIEW.md)
 
+## ภาพตัวอย่าง
+
+<p align="center">
+  <img src="./docs/images/crosspoint-th/cover.jpg" alt="หน้าปกหนังสือบน Xteink ที่ใช้ crosspointTH" width="30%">
+  <img src="./docs/images/crosspoint-th/thai-reading-1.jpg" alt="ตัวอย่างการอ่านภาษาไทยบน crosspointTH" width="30%">
+  <img src="./docs/images/crosspoint-th/thai-reading-2.jpg" alt="ตัวอย่างการจัดวางข้อความภาษาไทยบน crosspointTH" width="30%">
+</p>
+
 ## วิธีติดตั้ง
+
+ดูขั้นตอนการติดตั้งแบบวิดีโอได้โดยคลิกภาพด้านล่าง:
+
+[![วิดีโอวิธีติดตั้ง crosspointTH](https://img.youtube.com/vi/wXqNoefhf3M/hqdefault.jpg)](https://youtu.be/wXqNoefhf3M)
 
 ### อัปเดตผ่าน SD card
 
