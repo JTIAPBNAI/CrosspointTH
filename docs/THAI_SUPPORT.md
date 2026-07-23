@@ -18,6 +18,13 @@ Thai word breaking uses an embedded dictionary. TXT/Markdown indexing segments e
 once and reuses the resulting boundaries while fitting display lines. This avoids the repeated
 prefix segmentation that made large Thai files appear frozen.
 
+Development builds after `v1.4.1-th.2` recognize GitHub-style Markdown pipe tables. Because a rigid
+grid is not readable on the narrow Xteink display, each row is rendered as stacked fields with bold
+column labels. Alignment markers are accepted, the separator row is hidden, escaped pipes and pipes
+inside inline code remain part of their cell, and an expanded row is kept together when a page has
+enough room. An unusually large row falls back to ordinary Markdown rendering so pagination can
+continue without losing source text.
+
 ## Reader settings
 
 `crosspointTH` intentionally reuses the upstream **Reader Line Spacing** and **Reader Paragraph
@@ -45,7 +52,8 @@ paragraphs, mixed Thai/Latin text, Markdown headings/lists, and an SD font that 
 
 - Dictionary breaking can be ambiguous for names, new words, and domain-specific compounds.
 - Font fallback preserves readable Thai but may visually differ from the selected Latin font.
-- Markdown support is a lightweight reader subset, not a complete CommonMark implementation.
+- Markdown support, including pipe tables, is a lightweight reader subset rather than a complete
+  CommonMark or GitHub Flavored Markdown implementation.
 - Automated host tests validate shaping decisions but cannot fully replace inspection on an e-ink panel.
 
 ## Physical validation log

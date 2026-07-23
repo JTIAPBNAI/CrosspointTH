@@ -1,6 +1,34 @@
 #include "MarkdownParser.h"
 
+#include <algorithm>
+#include <cctype>
+
 namespace MarkdownParser {
+namespace {
+
+std::string trim(const std::string& value) {
+  size_t start = 0;
+  while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) ++start;
+  size_t end = value.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) --end;
+  return value.substr(start, end - start);
+}
+
+bool isDelimiterCell(const std::string& rawCell) {
+  const std::string cell = trim(rawCell);
+  if (cell.empty()) return false;
+
+  size_t start = cell.front() == ':' ? 1 : 0;
+  size_t end = cell.size();
+  if (end > start && cell[end - 1] == ':') --end;
+  if (end - start < 3) return false;
+  for (size_t i = start; i < end; ++i) {
+    if (cell[i] != '-') return false;
+  }
+  return true;
+}
+
+}  // namespace
 
 uint8_t headingLevel(const std::string& line) {
   size_t hashes = 0;
@@ -33,6 +61,79 @@ std::string transformBlock(const std::string& in, const bool firstSegment) {
   }
   prefix.append(in, start, std::string::npos);
   return prefix;
+}
+
+bool parseTableRow(const std::string& line, TableRow& row) {
+  row = {};
+  const std::string stripped = trim(line);
+  if (stripped.empty()) return false;
+
+  const bool leadingPipe = stripped.front() == '|';
+  const bool trailingPipe = stripped.back() == '|';
+  row.hasOuterPipes = leadingPipe && trailingPipe;
+
+  std::vector<std::string> cells;
+  std::string cell;
+  bool inCode = false;
+  size_t separators = 0;
+  for (size_t i = 0; i < stripped.size(); ++i) {
+    const char ch = stripped[i];
+    if (ch == '\\' && i + 1 < stripped.size() && stripped[i + 1] == '|') {
+      cell += '|';
+      ++i;
+      continue;
+    }
+    if (ch == '`') {
+      inCode = !inCode;
+      cell += ch;
+      continue;
+    }
+    if (ch == '|' && !inCode) {
+      cells.push_back(trim(cell));
+      cell.clear();
+      ++separators;
+      continue;
+    }
+    cell += ch;
+  }
+  cells.push_back(trim(cell));
+
+  if (leadingPipe && !cells.empty() && cells.front().empty()) cells.erase(cells.begin());
+  if (trailingPipe && !cells.empty() && cells.back().empty()) cells.pop_back();
+  if (separators == 0 || cells.size() < 2) return false;
+
+  row.cells = std::move(cells);
+  return true;
+}
+
+bool isTableDelimiter(const TableRow& row) {
+  return row.cells.size() >= 2 &&
+         std::all_of(row.cells.begin(), row.cells.end(), [](const std::string& cell) { return isDelimiterCell(cell); });
+}
+
+std::vector<std::string> formatTableRow(const TableRow& row, const std::vector<std::string>& headers,
+                                        const bool headerRow) {
+  std::vector<std::string> fields;
+  if (headerRow) {
+    fields.reserve(row.cells.size());
+    for (const auto& cell : row.cells) {
+      if (!cell.empty()) fields.push_back("**" + cell + "**");
+    }
+    return fields;
+  }
+
+  const size_t count = std::max(row.cells.size(), headers.size());
+  fields.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    const std::string value = i < row.cells.size() ? row.cells[i] : "";
+    const std::string label = i < headers.size() ? headers[i] : "";
+    if (!label.empty()) {
+      fields.push_back("**" + label + ":** " + value);
+    } else if (!value.empty()) {
+      fields.push_back("\xE2\x80\xA2 " + value);  // U+2022 bullet
+    }
+  }
+  return fields;
 }
 
 Inline parseInline(const std::string& in, const EpdFontFamily::Style baseStyle) {
