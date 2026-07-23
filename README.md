@@ -25,9 +25,7 @@
 - [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.4.1-th.3/crosspointTH-firmware.bin)
 - [ดูรายละเอียด ไฟล์ตรวจสอบ SHA-256 และไฟล์ประกอบทั้งหมด](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.4.1-th.3)
 
-รุ่นนี้ยังระบุเป็น **Pre-release** เพราะยังต้องเก็บผลทดสอบบนเครื่อง X3/X4 จริงเพิ่มเติม GitHub จึงอาจ
-ไม่แสดงรุ่นนี้ในช่อง “Latest release” แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว ไม่ควรเปลี่ยนสถานะเป็น Stable
-จนกว่าจะผ่านการทดสอบบนฮาร์ดแวร์จริงครบถ้วน
+รุ่นนี้ยังระบุเป็น **Pre-release** แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว
 
 SHA-256 ของไฟล์เฟิร์มแวร์:
 
