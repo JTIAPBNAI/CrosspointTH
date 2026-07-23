@@ -20,10 +20,10 @@
 
 ## ดาวน์โหลดรุ่นภาษาไทย
 
-รุ่นปัจจุบัน: **v1.4.1-th.2 (Pre-release)**
+รุ่นปัจจุบัน: **v1.4.1-th.3 (Pre-release)**
 
-- [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.4.1-th.2/crosspointTH-firmware.bin)
-- [ดูรายละเอียด ไฟล์ตรวจสอบ SHA-256 และไฟล์ประกอบทั้งหมด](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.4.1-th.2)
+- [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.4.1-th.3/crosspointTH-firmware.bin)
+- [ดูรายละเอียด ไฟล์ตรวจสอบ SHA-256 และไฟล์ประกอบทั้งหมด](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.4.1-th.3)
 
 รุ่นนี้ยังระบุเป็น **Pre-release** เพราะยังต้องเก็บผลทดสอบบนเครื่อง X3/X4 จริงเพิ่มเติม GitHub จึงอาจ
 ไม่แสดงรุ่นนี้ในช่อง “Latest release” แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว ไม่ควรเปลี่ยนสถานะเป็น Stable
@@ -32,7 +32,7 @@
 SHA-256 ของไฟล์เฟิร์มแวร์:
 
 ```text
-9376157219d76fd2b9dfc3de1d0f4077c5a5210eee814e8138a876e9eb7b27e6  crosspointTH-firmware.bin
+36765b33f56ad58bbc6523573ec08c4ea190f7a6c56cf5fad3fa5ce769328e84  crosspointTH-firmware.bin
 ```
 
 ## จุดเด่นของ crosspointTH
@@ -42,7 +42,10 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 - ตัดคำไทยด้วยพจนานุกรม โดยไม่แยกพยัญชนะ สระ และวรรณยุกต์ออกจาก cluster เดียวกัน
 - จัดตำแหน่งสระบนและวรรณยุกต์ซ้อนหลายชั้น เช่น `อึ่` `อื้อ` `ปึ้` และ `อ่ำ`
 - ลดงานซ้ำขณะสร้าง index ของไฟล์ `.txt` และ `.md` ภาษาไทย
-- แสดง Markdown แบบมี heading, ตัวหนา, ตัวเอียง, inline code, list, quote และข้อความลิงก์
+- แสดง Markdown แบบมี heading, ตัวหนา, ตัวเอียง, inline code, list, quote, ข้อความลิงก์
+  และ pipe table ที่จัดแต่ละแถวเป็นข้อมูลเรียงลงมาให้อ่านง่ายบนจอขนาดเล็ก
+- ตารางใน EPUB ใช้ชื่อคอลัมน์จริงจาก `<th>` แทนข้อความ `Tab Row …, Cell …`; ถ้าไฟล์ไม่มี
+  หัวตารางจะแสดง `Column N`
 - ใช้การจัดแนวย่อหน้าและระยะบรรทัดจาก Reader Settings กับไฟล์ TXT/Markdown
 - จำกัดการขยายแบบ justified ไว้ไม่เกิน 1 พิกเซลต่อขอบเขตคำไทย และไม่ยืดภายใน glyph cluster
 - มีสถิติการอ่านแบบ lightweight สำหรับ EPUB: จำนวนครั้ง เวลาอ่าน หน้าที่อ่านไปข้างหน้า

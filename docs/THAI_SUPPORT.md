@@ -18,12 +18,18 @@ Thai word breaking uses an embedded dictionary. TXT/Markdown indexing segments e
 once and reuses the resulting boundaries while fitting display lines. This avoids the repeated
 prefix segmentation that made large Thai files appear frozen.
 
-Development builds after `v1.4.1-th.2` recognize GitHub-style Markdown pipe tables. Because a rigid
+Starting with `v1.4.1-th.3`, the reader recognizes GitHub-style Markdown pipe tables. Because a rigid
 grid is not readable on the narrow Xteink display, each row is rendered as stacked fields with bold
 column labels. Alignment markers are accepted, the separator row is hidden, escaped pipes and pipes
 inside inline code remain part of their cell, and an expanded row is kept together when a page has
 enough room. An unusually large row falls back to ordinary Markdown rendering so pagination can
 continue without losing source text.
+
+EPUB HTML tables use the same narrow-screen principle. The first row's semantic `<th>` cells become
+bold labels for subsequent values, replacing the parser's former `Tab Row …, Cell …` diagnostics.
+When an EPUB omits semantic headers, the reader uses a concise `Column N` fallback. Because this
+changes generated EPUB layout, `v1.4.1-th.3` advances the EPUB section-cache version and rebuilds
+existing cached sections once.
 
 ## Reader settings
 
@@ -54,6 +60,7 @@ paragraphs, mixed Thai/Latin text, Markdown headings/lists, and an SD font that 
 - Font fallback preserves readable Thai but may visually differ from the selected Latin font.
 - Markdown support, including pipe tables, is a lightweight reader subset rather than a complete
   CommonMark or GitHub Flavored Markdown implementation.
+- EPUB `rowspan` and `colspan` are still flattened rather than rendered as a visual grid.
 - Automated host tests validate shaping decisions but cannot fully replace inspection on an e-ink panel.
 
 ## Physical validation log

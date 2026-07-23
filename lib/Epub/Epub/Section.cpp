@@ -21,7 +21,8 @@ namespace {
 //      tokenization and store PUA codepoints in the word arena. Offset by +100
 //      from upstream so caches never validate across firmware swaps in either
 //      direction (rollback to stock CrossPoint simply re-indexes books).
-constexpr uint8_t SECTION_FILE_VERSION = 131;
+// v132 (Thai fork): EPUB table cells use semantic column headings.
+constexpr uint8_t SECTION_FILE_VERSION = 132;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
