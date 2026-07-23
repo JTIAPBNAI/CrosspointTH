@@ -4,7 +4,7 @@
 
 - Project name: **crosspointTH**
 - Thai edition maintainer and modifier: **JTIAPBN.Ai**
-- Edition version: **1.4.1-th.1**
+- Edition version: **1.4.1-th.3**
 - Upstream base commit: `63eda54ee9e442b62543cccfc7d2ec8a21099b0d`
 - Upstream project: [crosspoint-reader/crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader)
 
