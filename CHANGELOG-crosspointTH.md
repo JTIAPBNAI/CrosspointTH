@@ -1,5 +1,11 @@
 # crosspointTH changelog
 
+## Unreleased
+
+- Added GitHub-style Markdown pipe-table parsing for `.md` books.
+- Rendered table headers and cells as stacked, labeled fields that fit the narrow Xteink display.
+- Preserved escaped pipes and pipes inside inline code, and kept expanded rows together across page breaks.
+
 ## 1.4.1-th.2 — 2026-07-22
 
 - Added Thai glyphs to the 8-point status-bar font so Thai book and file titles no longer render as replacement diamonds.

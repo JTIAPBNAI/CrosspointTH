@@ -13,6 +13,7 @@
 #include <Utf8.h>
 
 #include <cmath>
+#include <limits>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -25,13 +26,15 @@
 
 namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
+constexpr size_t NO_TABLE_HEADER = std::numeric_limits<size_t>::max();
+constexpr uint32_t NO_TABLE_HEADER_CACHE = std::numeric_limits<uint32_t>::max();
 constexpr int MAX_THAI_JUSTIFY_GAP_PX = 1;
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 // Increment when cache format changes. Thai fork: offset +100 from upstream
 // (Thai-aware wrapping and Markdown transforms change page break offsets), so
 // page-index caches never validate across firmware swaps in either direction.
-constexpr uint8_t CACHE_VERSION = 105;
+constexpr uint8_t CACHE_VERSION = 106;
 }  // namespace
 
 void TxtReaderActivity::onEnter() {
@@ -65,6 +68,7 @@ void TxtReaderActivity::onExit() {
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   pageOffsets.clear();
+  pageTableHeaderOffsets.clear();
   currentPageLines.clear();
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
@@ -145,9 +149,12 @@ void TxtReaderActivity::initializeReader() {
 
 void TxtReaderActivity::buildPageIndex() {
   pageOffsets.clear();
+  pageTableHeaderOffsets.clear();
   pageOffsets.push_back(0);  // First page starts at offset 0
+  pageTableHeaderOffsets.push_back(NO_TABLE_HEADER);
 
   size_t offset = 0;
+  size_t tableHeaderOffset = NO_TABLE_HEADER;
   const size_t fileSize = txt->getFileSize();
 
   LOG_DBG("TRS", "Building page index for %zu bytes...", fileSize);
@@ -157,8 +164,9 @@ void TxtReaderActivity::buildPageIndex() {
   while (offset < fileSize) {
     std::vector<DisplayLine> tempLines;
     size_t nextOffset = offset;
+    size_t nextTableHeaderOffset = tableHeaderOffset;
 
-    if (!loadPageAtOffset(offset, tempLines, nextOffset)) {
+    if (!loadPageAtOffset(offset, tempLines, nextOffset, tableHeaderOffset, nextTableHeaderOffset)) {
       break;
     }
 
@@ -168,8 +176,10 @@ void TxtReaderActivity::buildPageIndex() {
     }
 
     offset = nextOffset;
+    tableHeaderOffset = nextTableHeaderOffset;
     if (offset < fileSize) {
       pageOffsets.push_back(offset);
+      pageTableHeaderOffsets.push_back(tableHeaderOffset);
     }
 
     // Yield to other tasks periodically
@@ -201,7 +211,162 @@ int mdHeadingFontId(const uint8_t level, const int bodyFontId) {
 
 }  // namespace
 
-bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>& outLines, size_t& nextOffset) {
+bool TxtReaderActivity::readMarkdownTableHeaders(const size_t offset, std::vector<std::string>& headers) {
+  headers.clear();
+  const size_t fileSize = txt->getFileSize();
+  if (offset == NO_TABLE_HEADER || offset >= fileSize) return false;
+
+  const size_t readSize = std::min(CHUNK_SIZE, fileSize - offset);
+  std::vector<uint8_t> buffer(readSize + 1);
+  if (!txt->readContent(buffer.data(), offset, readSize)) return false;
+  buffer[readSize] = '\0';
+
+  size_t lineEnd = 0;
+  while (lineEnd < readSize && buffer[lineEnd] != '\n') ++lineEnd;
+  if (lineEnd == readSize && offset + lineEnd < fileSize) return false;
+  if (lineEnd > 0 && buffer[lineEnd - 1] == '\r') --lineEnd;
+
+  const std::string line(reinterpret_cast<const char*>(buffer.data()), lineEnd);
+  MarkdownParser::TableRow row;
+  if (!MarkdownParser::parseTableRow(line, row) || MarkdownParser::isTableDelimiter(row)) return false;
+  headers = std::move(row.cells);
+  return !headers.empty();
+}
+
+TxtReaderActivity::TableRowResult TxtReaderActivity::appendMarkdownTableFields(const std::vector<std::string>& fields,
+                                                                               std::vector<DisplayLine>& outLines,
+                                                                               int& usedHeight) {
+  const int lineAdvance =
+      std::max(1, static_cast<int>(std::ceil(renderer.getLineHeight(cachedFontId) * cachedLineCompression)));
+  std::vector<DisplayLine> pending;
+
+  const auto makeDisplayLine = [&](const std::string& visual, const bool paragraphEnd) {
+    const auto parsed = MarkdownParser::parseInline(visual, EpdFontFamily::REGULAR);
+    const bool hasThai = ThaiBrk::containsThai(visual);
+
+    DisplayLine display;
+    display.fontId = cachedFontId;
+    display.style = EpdFontFamily::REGULAR;
+    display.advanceY = lineAdvance;
+    display.paragraphEnd = paragraphEnd;
+    display.runs.reserve(parsed.runs.size());
+    for (const auto& run : parsed.runs) {
+      if (!hasThai) {
+        display.text += run.text;
+        display.runs.push_back({run.text, static_cast<uint8_t>(run.style), false});
+        continue;
+      }
+
+      const auto breakOffsets = ThaiBrk::wordBreakByteOffsets(run.text);
+      size_t tokenStart = 0;
+      for (const size_t breakOffset : breakOffsets) {
+        if (breakOffset <= tokenStart || breakOffset > run.text.size()) continue;
+        std::string token = ThaiShaping::shapeUtf8(run.text.substr(tokenStart, breakOffset - tokenStart));
+        display.text += token;
+        display.runs.push_back({std::move(token), static_cast<uint8_t>(run.style), true});
+        ++display.thaiGapCount;
+        tokenStart = breakOffset;
+      }
+      if (tokenStart < run.text.size()) {
+        std::string token = ThaiShaping::shapeUtf8(run.text.substr(tokenStart));
+        display.text += token;
+        display.runs.push_back({std::move(token), static_cast<uint8_t>(run.style), false});
+      }
+    }
+    return display;
+  };
+
+  const auto measure = [&](const std::string& visual) {
+    const auto parsed = MarkdownParser::parseInline(visual, EpdFontFamily::REGULAR);
+    const bool hasThai = ThaiBrk::containsThai(visual);
+    int width = 0;
+    for (const auto& run : parsed.runs) {
+      const std::string shaped = hasThai ? ThaiShaping::shapeUtf8(run.text) : run.text;
+      width += renderer.getTextAdvanceX(cachedFontId, shaped.c_str(), run.style);
+    }
+    return width;
+  };
+
+  for (const auto& field : fields) {
+    if (field.empty()) continue;
+
+    const bool hasThai = ThaiBrk::containsThai(field);
+    const auto thaiBreaks = hasThai ? ThaiBrk::wordBreakByteOffsets(field) : std::vector<size_t>{};
+    std::vector<size_t> charEnds;
+    charEnds.reserve(field.size() / (hasThai ? 3 : 1));
+    const auto* charPtr = reinterpret_cast<const unsigned char*>(field.c_str());
+    const auto* const fieldStart = charPtr;
+    while (*charPtr) {
+      utf8NextCodepoint(&charPtr);
+      charEnds.push_back(static_cast<size_t>(charPtr - fieldStart));
+    }
+
+    size_t fieldBytePos = 0;
+    std::string remaining = field;
+    const size_t fieldFirstLine = pending.size();
+    while (!remaining.empty()) {
+      if (measure(remaining) <= viewportWidth) {
+        pending.push_back(makeDisplayLine(remaining, true));
+        fieldBytePos = field.size();
+        remaining.clear();
+        break;
+      }
+
+      const auto firstEnd = std::upper_bound(charEnds.begin(), charEnds.end(), fieldBytePos);
+      size_t low = static_cast<size_t>(firstEnd - charEnds.begin());
+      size_t high = charEnds.size();
+      size_t fittingEnd = fieldBytePos;
+      while (low < high) {
+        const size_t mid = low + (high - low) / 2;
+        const size_t candidateEnd = charEnds[mid];
+        if (measure(remaining.substr(0, candidateEnd - fieldBytePos)) <= viewportWidth) {
+          fittingEnd = candidateEnd;
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
+      }
+
+      size_t fittingBytes = fittingEnd > fieldBytePos ? fittingEnd - fieldBytePos : 0;
+      if (fittingBytes == 0 && firstEnd != charEnds.end()) fittingBytes = *firstEnd - fieldBytePos;
+
+      size_t breakPos = 0;
+      if (fittingBytes > 0) {
+        const size_t spacePos = remaining.rfind(' ', fittingBytes - 1);
+        if (spacePos != std::string::npos && spacePos > 0) breakPos = spacePos;
+      }
+      if (hasThai) {
+        for (const size_t absoluteBreak : thaiBreaks) {
+          if (absoluteBreak <= fieldBytePos) continue;
+          const size_t relativeBreak = absoluteBreak - fieldBytePos;
+          if (relativeBreak > fittingBytes) break;
+          if (relativeBreak > breakPos) breakPos = relativeBreak;
+        }
+      }
+      if (breakPos == 0) breakPos = fittingBytes;
+      if (breakPos == 0) return TableRowResult::TOO_TALL;
+
+      pending.push_back(makeDisplayLine(remaining.substr(0, breakPos), false));
+      size_t skipBytes = breakPos;
+      if (breakPos < remaining.size() && remaining[breakPos] == ' ') ++skipBytes;
+      fieldBytePos += skipBytes;
+      remaining = remaining.substr(skipBytes);
+    }
+    if (pending.size() > fieldFirstLine) pending.back().paragraphEnd = true;
+  }
+
+  if (pending.empty()) return TableRowResult::ADDED;
+  const int rowHeight = static_cast<int>(pending.size()) * lineAdvance;
+  if (rowHeight > viewportHeight) return TableRowResult::TOO_TALL;
+  if (!outLines.empty() && usedHeight + rowHeight > viewportHeight) return TableRowResult::DEFERRED;
+
+  outLines.insert(outLines.end(), std::make_move_iterator(pending.begin()), std::make_move_iterator(pending.end()));
+  usedHeight += rowHeight;
+  return TableRowResult::ADDED;
+}
+
+bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>& outLines, size_t& nextOffset,
+                                         size_t tableHeaderOffset, size_t& nextTableHeaderOffset) {
   outLines.clear();
   const size_t fileSize = txt->getFileSize();
 
@@ -240,6 +405,10 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
   size_t pos = 0;
   int usedHeight = 0;
   bool pageFull = false;
+  size_t activeTableHeaderOffset = tableHeaderOffset;
+  std::vector<std::string> markdownTableHeaders;
+  bool inMarkdownTable = isMarkdown && readMarkdownTableHeaders(activeTableHeaderOffset, markdownTableHeaders);
+  if (!inMarkdownTable) activeTableHeaderOffset = NO_TABLE_HEADER;
 
   while (pos < chunkSize && !pageFull) {
     // Find end of line
@@ -265,6 +434,56 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
 
     // Extract line content for display (without CR/LF)
     std::string line(reinterpret_cast<char*>(buffer + pos), displayLen);
+
+    MarkdownParser::TableRow tableRow;
+    const bool parsedTableRow = isMarkdown && lineComplete && MarkdownParser::parseTableRow(line, tableRow);
+    const bool delimiterRow = parsedTableRow && MarkdownParser::isTableDelimiter(tableRow);
+    bool headerRow = false;
+    if (parsedTableRow && !delimiterRow && lineEnd < chunkSize) {
+      const size_t nextStart = lineEnd + 1;
+      size_t nextEnd = nextStart;
+      while (nextEnd < chunkSize && buffer[nextEnd] != '\n') ++nextEnd;
+      const bool nextComplete = nextEnd < chunkSize || offset + nextEnd >= fileSize;
+      if (nextComplete) {
+        size_t nextLength = nextEnd - nextStart;
+        if (nextLength > 0 && buffer[nextStart + nextLength - 1] == '\r') --nextLength;
+        const std::string nextLine(reinterpret_cast<char*>(buffer + nextStart), nextLength);
+        MarkdownParser::TableRow nextRow;
+        headerRow = MarkdownParser::parseTableRow(nextLine, nextRow) && MarkdownParser::isTableDelimiter(nextRow) &&
+                    nextRow.cells.size() == tableRow.cells.size();
+      }
+    }
+
+    const bool renderTableRow =
+        parsedTableRow && !delimiterRow && (headerRow || inMarkdownTable || tableRow.hasOuterPipes);
+    if (delimiterRow && (inMarkdownTable || tableRow.hasOuterPipes)) {
+      inMarkdownTable = true;
+      pos = lineEnd + 1;
+      continue;
+    }
+    if (renderTableRow) {
+      if (headerRow) {
+        markdownTableHeaders = tableRow.cells;
+        inMarkdownTable = true;
+        activeTableHeaderOffset = offset + pos;
+      }
+      const auto fields = MarkdownParser::formatTableRow(tableRow, markdownTableHeaders, headerRow);
+      const TableRowResult result = appendMarkdownTableFields(fields, outLines, usedHeight);
+      if (result == TableRowResult::DEFERRED) {
+        pageFull = true;
+        break;
+      }
+      if (result == TableRowResult::ADDED) {
+        pos = lineEnd + 1;
+        continue;
+      }
+      // An unusually large row cannot be kept atomic. Fall through to the
+      // ordinary Markdown path so it remains readable and paginates safely.
+    } else if (!delimiterRow) {
+      inMarkdownTable = false;
+      markdownTableHeaders.clear();
+      activeTableHeaderOffset = NO_TABLE_HEADER;
+    }
 
     // Decode/break the source line once. The old wrap loop repeated Thai
     // dictionary segmentation and then re-measured successively shorter UTF-8
@@ -468,6 +687,7 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
   if (nextOffset > fileSize) {
     nextOffset = fileSize;
   }
+  nextTableHeaderOffset = inMarkdownTable ? activeTableHeaderOffset : NO_TABLE_HEADER;
 
   free(buffer);
 
@@ -498,8 +718,12 @@ void TxtReaderActivity::render(RenderLock&&) {
   // Load current page content
   size_t offset = pageOffsets[currentPage];
   size_t nextOffset;
+  const size_t tableHeaderOffset = currentPage < static_cast<int>(pageTableHeaderOffsets.size())
+                                       ? pageTableHeaderOffsets[currentPage]
+                                       : NO_TABLE_HEADER;
+  size_t nextTableHeaderOffset = tableHeaderOffset;
   currentPageLines.clear();
-  loadPageAtOffset(offset, currentPageLines, nextOffset);
+  loadPageAtOffset(offset, currentPageLines, nextOffset, tableHeaderOffset, nextTableHeaderOffset);
 
   renderer.clearScreen();
   renderPage();
@@ -638,6 +862,7 @@ bool TxtReaderActivity::loadPageIndexCache() {
   // - uint8_t: line spacing (to invalidate cache on vertical rhythm change)
   // - uint32_t: total pages count
   // - N * uint32_t: page offsets
+  // - N * uint32_t: active Markdown table-header offsets (UINT32_MAX for none)
 
   std::string cachePath = txt->getCachePath() + "/index.bin";
   HalFile f;
@@ -722,6 +947,13 @@ bool TxtReaderActivity::loadPageIndexCache() {
     serialization::readPod(f, offset);
     pageOffsets.push_back(offset);
   }
+  pageTableHeaderOffsets.clear();
+  pageTableHeaderOffsets.reserve(numPages);
+  for (uint32_t i = 0; i < numPages; i++) {
+    uint32_t offset;
+    serialization::readPod(f, offset);
+    pageTableHeaderOffsets.push_back(offset == NO_TABLE_HEADER_CACHE ? NO_TABLE_HEADER : static_cast<size_t>(offset));
+  }
 
   totalPages = pageOffsets.size();
   LOG_DBG("TRS", "Loaded page index cache: %d pages", totalPages);
@@ -751,6 +983,9 @@ void TxtReaderActivity::savePageIndexCache() const {
   // Write page offsets
   for (size_t offset : pageOffsets) {
     serialization::writePod(f, static_cast<uint32_t>(offset));
+  }
+  for (size_t offset : pageTableHeaderOffsets) {
+    serialization::writePod(f, offset == NO_TABLE_HEADER ? NO_TABLE_HEADER_CACHE : static_cast<uint32_t>(offset));
   }
 
   LOG_DBG("TRS", "Saved page index cache: %d pages", totalPages);

@@ -25,6 +25,8 @@ class TxtReaderActivity final : public Activity {
     bool paragraphEnd = false;
   };
 
+  enum class TableRowResult : uint8_t { ADDED, DEFERRED, TOO_TALL };
+
   std::unique_ptr<Txt> txt;
 
   int currentPage = 0;
@@ -33,9 +35,11 @@ class TxtReaderActivity final : public Activity {
 
   // Streaming text reader - stores file offsets for each page
   std::vector<size_t> pageOffsets;  // File offset for start of each page
+  std::vector<size_t> pageTableHeaderOffsets;
   std::vector<DisplayLine> currentPageLines;
   // .md files get block and inline formatting: scaled/bold headings, bullets,
-  // bold/italic runs, code emphasis, and links displayed without their URL.
+  // bold/italic runs, code emphasis, links displayed without their URL, and
+  // pipe tables flattened into narrow-screen-friendly labeled fields.
   bool isMarkdown = false;
   int linesPerPage = 0;
   int viewportWidth = 0;
@@ -57,7 +61,11 @@ class TxtReaderActivity final : public Activity {
   void renderStatusBar() const;
 
   void initializeReader();
-  bool loadPageAtOffset(size_t offset, std::vector<DisplayLine>& outLines, size_t& nextOffset);
+  bool loadPageAtOffset(size_t offset, std::vector<DisplayLine>& outLines, size_t& nextOffset, size_t tableHeaderOffset,
+                        size_t& nextTableHeaderOffset);
+  bool readMarkdownTableHeaders(size_t offset, std::vector<std::string>& headers);
+  TableRowResult appendMarkdownTableFields(const std::vector<std::string>& fields, std::vector<DisplayLine>& outLines,
+                                           int& usedHeight);
   void buildPageIndex();
   bool loadPageIndexCache();
   void savePageIndexCache() const;
