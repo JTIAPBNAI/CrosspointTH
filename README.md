@@ -32,7 +32,7 @@
 SHA-256 ของไฟล์เฟิร์มแวร์:
 
 ```text
-b63df8a9bb6b40ebec459d9df6a805dab6ef51b1e7c1f1a8498cc13cd546df0f  crosspointTH-firmware.bin
+36765b33f56ad58bbc6523573ec08c4ea190f7a6c56cf5fad3fa5ce769328e84  crosspointTH-firmware.bin
 ```
 
 ## จุดเด่นของ crosspointTH
@@ -44,6 +44,8 @@ b63df8a9bb6b40ebec459d9df6a805dab6ef51b1e7c1f1a8498cc13cd546df0f  crosspointTH-f
 - ลดงานซ้ำขณะสร้าง index ของไฟล์ `.txt` และ `.md` ภาษาไทย
 - แสดง Markdown แบบมี heading, ตัวหนา, ตัวเอียง, inline code, list, quote, ข้อความลิงก์
   และ pipe table ที่จัดแต่ละแถวเป็นข้อมูลเรียงลงมาให้อ่านง่ายบนจอขนาดเล็ก
+- ตารางใน EPUB ใช้ชื่อคอลัมน์จริงจาก `<th>` แทนข้อความ `Tab Row …, Cell …`; ถ้าไฟล์ไม่มี
+  หัวตารางจะแสดง `Column N`
 - ใช้การจัดแนวย่อหน้าและระยะบรรทัดจาก Reader Settings กับไฟล์ TXT/Markdown
 - จำกัดการขยายแบบ justified ไว้ไม่เกิน 1 พิกเซลต่อขอบเขตคำไทย และไม่ยืดภายใน glyph cluster
 - มีสถิติการอ่านแบบ lightweight สำหรับ EPUB: จำนวนครั้ง เวลาอ่าน หน้าที่อ่านไปข้างหน้า

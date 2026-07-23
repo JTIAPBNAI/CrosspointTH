@@ -5,6 +5,10 @@
 - Added GitHub-style Markdown pipe-table parsing for `.md` books.
 - Rendered table headers and cells as stacked, labeled fields that fit the narrow Xteink display.
 - Preserved escaped pipes and pipes inside inline code, and kept expanded rows together across page breaks.
+- Replaced EPUB `Tab Row …, Cell …` labels with semantic `<th>` headings, with a concise
+  `Column N` fallback when an EPUB provides no headings.
+- Bumped the EPUB layout cache so existing books rebuild with the improved table labels.
+- Updated the boot-screen edition label to `1.4.1-th.3`.
 
 ## 1.4.1-th.2 — 2026-07-22
 

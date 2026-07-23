@@ -25,6 +25,12 @@ inside inline code remain part of their cell, and an expanded row is kept togeth
 enough room. An unusually large row falls back to ordinary Markdown rendering so pagination can
 continue without losing source text.
 
+EPUB HTML tables use the same narrow-screen principle. The first row's semantic `<th>` cells become
+bold labels for subsequent values, replacing the parser's former `Tab Row …, Cell …` diagnostics.
+When an EPUB omits semantic headers, the reader uses a concise `Column N` fallback. Because this
+changes generated EPUB layout, `v1.4.1-th.3` advances the EPUB section-cache version and rebuilds
+existing cached sections once.
+
 ## Reader settings
 
 `crosspointTH` intentionally reuses the upstream **Reader Line Spacing** and **Reader Paragraph
@@ -54,6 +60,7 @@ paragraphs, mixed Thai/Latin text, Markdown headings/lists, and an SD font that 
 - Font fallback preserves readable Thai but may visually differ from the selected Latin font.
 - Markdown support, including pipe tables, is a lightweight reader subset rather than a complete
   CommonMark or GitHub Flavored Markdown implementation.
+- EPUB `rowspan` and `colspan` are still flattened rather than rendered as a visual grid.
 - Automated host tests validate shaping decisions but cannot fully replace inspection on an e-ink panel.
 
 ## Physical validation log

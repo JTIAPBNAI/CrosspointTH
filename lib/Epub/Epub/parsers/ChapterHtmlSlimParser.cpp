@@ -17,6 +17,7 @@
 #include "Epub/converters/ImageDecoderFactory.h"
 #include "Epub/converters/ImageToFramebufferDecoder.h"
 #include "Epub/htmlEntities.h"
+#include "EpubTableSupport.h"
 
 // Minimum file size (in bytes) to show indexing popup - smaller chapters don't benefit from it
 constexpr size_t MIN_SIZE_FOR_POPUP = 10 * 1024;  // 10KB
@@ -352,6 +353,16 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
 void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
 
+  // Header-cell text is captured as a plain label. Ignore nested formatting while capturing,
+  // but preserve a word boundary for explicit line breaks.
+  if (self->captureTableHeaderCell) {
+    if (strcmp(name, "br") == 0) {
+      self->tableHeaderBuffer.push_back(' ');
+    }
+    self->depth += 1;
+    return;
+  }
+
   // Middle of skip
   if (self->skipUntilDepth < self->depth) {
     self->depth += 1;
@@ -457,6 +468,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->tableDepth += 1;
     self->tableRowIndex = 0;
     self->tableColIndex = 0;
+    self->captureTableHeaderCell = false;
+    self->tableHeaderBuffer.clear();
+    self->tableHeaders.clear();
     self->depth += 1;
     return;
   }
@@ -474,6 +488,15 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
     self->tableColIndex += 1;
 
+    // Use the first row's semantic <th> cells as labels for all following rows. The
+    // header row itself is not rendered separately because each value repeats its label.
+    if (self->tableRowIndex == 1 && strcmp(name, "th") == 0) {
+      self->captureTableHeaderCell = true;
+      self->tableHeaderBuffer.clear();
+      self->depth += 1;
+      return;
+    }
+
     auto tableCellBlockStyle = BlockStyle();
     tableCellBlockStyle.textAlignDefined = true;
     const auto align = (self->paragraphAlignment == static_cast<uint8_t>(CssTextAlign::None))
@@ -483,13 +506,13 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->startNewTextBlock(tableCellBlockStyle);
 
     const std::string headerText =
-        "Tab Row " + std::to_string(self->tableRowIndex) + ", Cell " + std::to_string(self->tableColIndex) + ":";
+        epub_table::cellLabel(self->tableHeaders, static_cast<size_t>(self->tableColIndex - 1));
     StyleStackEntry headerStyle;
     headerStyle.depth = self->depth;
     headerStyle.hasBold = true;
-    headerStyle.bold = false;
+    headerStyle.bold = true;
     headerStyle.hasItalic = true;
-    headerStyle.italic = true;
+    headerStyle.italic = false;
     self->inlineStyleStack.push_back(headerStyle);
     self->updateEffectiveInlineStyle();
     const CssTextDecoration savedTextDecoration = self->effectiveTextDecoration;
@@ -1019,6 +1042,11 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
 void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char* s, const int len) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
 
+  if (self->captureTableHeaderCell) {
+    self->tableHeaderBuffer.append(s, static_cast<size_t>(len));
+    return;
+  }
+
   // Skip content of nested table
   if (self->tableDepth > 1) {
     return;
@@ -1205,6 +1233,13 @@ void XMLCALL ChapterHtmlSlimParser::defaultHandlerExpand(void* userData, const X
 void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* name) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
 
+  // Nested markup inside a captured <th> only contributes character data to the label.
+  // Its open callback did not alter style or block state, so only balance the depth here.
+  if (self->captureTableHeaderCell && strcmp(name, "th") != 0) {
+    self->depth -= 1;
+    return;
+  }
+
   // Check if any style state will change after we decrement depth
   // If so, we MUST flush the partWordBuffer with the CURRENT style first
   // Note: depth hasn't been decremented yet, so we check against (depth - 1)
@@ -1268,6 +1303,15 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
   }
 
   if (self->tableDepth == 1 && (strcmp(name, "td") == 0 || strcmp(name, "th") == 0)) {
+    if (self->captureTableHeaderCell && strcmp(name, "th") == 0) {
+      const size_t columnIndex = static_cast<size_t>(self->tableColIndex - 1);
+      if (self->tableHeaders.size() <= columnIndex) {
+        self->tableHeaders.resize(columnIndex + 1);
+      }
+      self->tableHeaders[columnIndex] = epub_table::normalizeHeaderText(self->tableHeaderBuffer);
+      self->tableHeaderBuffer.clear();
+      self->captureTableHeaderCell = false;
+    }
     self->nextWordContinues = false;
   }
 
@@ -1279,6 +1323,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     self->tableDepth -= 1;
     self->tableRowIndex = 0;
     self->tableColIndex = 0;
+    self->captureTableHeaderCell = false;
+    self->tableHeaderBuffer.clear();
+    self->tableHeaders.clear();
     self->nextWordContinues = false;
   }
 
