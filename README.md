@@ -6,6 +6,18 @@
 > `crosspointTH` เป็นรุ่นชุมชนที่พัฒนาต่อยอดจาก CrossPoint Reader และไม่ใช่รุ่นทางการของ
 > CrossPoint Reader
 
+## วิดีโอวิธีติดตั้ง
+
+<p align="center">
+  <a href="https://youtu.be/wXqNoefhf3M">
+    <img src="https://img.youtube.com/vi/wXqNoefhf3M/hqdefault.jpg" alt="วิดีโอวิธีติดตั้ง crosspointTH" width="760">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/wXqNoefhf3M"><strong>▶ ดูวิดีโอวิธีติดตั้ง crosspointTH บน YouTube</strong></a>
+</p>
+
 ## ดาวน์โหลดรุ่นภาษาไทย
 
 รุ่นปัจจุบัน: **v1.4.1-th.2 (Pre-release)**
@@ -49,10 +61,6 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 </p>
 
 ## วิธีติดตั้ง
-
-ดูขั้นตอนการติดตั้งแบบวิดีโอได้โดยคลิกภาพด้านล่าง:
-
-[![วิดีโอวิธีติดตั้ง crosspointTH](https://img.youtube.com/vi/wXqNoefhf3M/hqdefault.jpg)](https://youtu.be/wXqNoefhf3M)
 
 ### อัปเดตผ่าน SD card
 
