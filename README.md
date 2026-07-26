@@ -1,6 +1,6 @@
 # crosspointTH
 
-เฟิร์มแวร์อ่านหนังสือภาษาไทยสำหรับ **Xteink X3/X4** ปรับแก้และดูแลโดย
+เฟิร์มแวร์อ่านหนังสือภาษาไทยสำหรับ **Xteink X3/X4** ปรับแก้โดย
 **JTIAPBN.Ai** เพื่อให้ภาษาไทยแสดงผล ตัดคำ และจัดหน้าได้เหมาะกับจอ e-ink มากขึ้น
 
 > `crosspointTH` เป็นรุ่นชุมชนที่พัฒนาต่อยอดจาก CrossPoint Reader และไม่ใช่รุ่นทางการของ
@@ -25,9 +25,7 @@
 - [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.5.0-th.1.1/crosspointTH-firmware.bin)
 - [ดูรายละเอียดและไฟล์ตรวจสอบ SHA-256](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.5.0-th.1.1)
 
-รุ่นนี้ยังระบุเป็น **Pre-release** เพราะยังต้องเก็บผลทดสอบบนเครื่อง X3/X4 จริงเพิ่มเติม GitHub จึงอาจ
-ไม่แสดงรุ่นนี้ในช่อง “Latest release” แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว ไม่ควรเปลี่ยนสถานะเป็น Stable
-จนกว่าจะผ่านการทดสอบบนฮาร์ดแวร์จริงครบถ้วน
+รุ่นนี้ยังระบุเป็น **Pre-release** แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว
 
 ## จุดเด่นของ crosspointTH
 
@@ -131,7 +129,7 @@ cluster เดียวกัน การยืดระหว่างอง�
 
 ## การพัฒนาและเครดิต
 
-ผู้ปรับแก้และดูแลรุ่นภาษาไทย: **JTIAPBN.Ai**
+ผู้ปรับแก้ภาษาไทย: **JTIAPBN.Ai**
 
 โครงการนี้พัฒนาต่อยอดจาก
 [crosspoint-reader/crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader) และเผยแพร่
