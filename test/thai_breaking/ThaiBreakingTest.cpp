@@ -1,13 +1,11 @@
-#include <gtest/gtest.h>
-
 #include <ThaiBrk.h>
+#include <gtest/gtest.h>
 
 #include <string>
 
 TEST(ThaiBreaking, HandlesLongMixedThaiAsciiWithoutCapacityGrowthFailure) {
   std::string line;
-  const std::string fragment =
-      "ท่ามกลางความอ่อนแอของระบบการศึกษาในโรงเรียน (Bray, 1999) shadow education — ";
+  const std::string fragment = "ท่ามกลางความอ่อนแอของระบบการศึกษาในโรงเรียน (Bray, 1999) shadow education — ";
   while (line.size() < 5795) line += fragment;
 
   const auto breaks = ThaiBrk::wordBreakByteOffsets(line);

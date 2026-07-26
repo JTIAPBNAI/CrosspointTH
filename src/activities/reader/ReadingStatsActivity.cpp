@@ -18,7 +18,7 @@ void drawNumberRow(GfxRenderer& renderer, const int x, const int y, const char* 
   renderer.drawText(UI_10_FONT_ID, x, y, line, true);
 }
 
-void drawDurationRow(GfxRenderer& renderer, const int x, const int y, const char* label, const uint32_t seconds) {
+void drawDurationRow(const GfxRenderer& renderer, const int x, const int y, const char* label, const uint32_t seconds) {
   char duration[32];
   char line[112];
   ReadingStatsStore::formatDuration(seconds, duration, sizeof(duration));

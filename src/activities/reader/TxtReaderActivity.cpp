@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <limits>
+#include <numeric>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -815,11 +816,11 @@ void TxtReaderActivity::renderPage() {
                           effectiveAlignment == CrossPointSettings::JUSTIFIED)) {
           effectiveAlignment = CrossPointSettings::RIGHT_ALIGN;
         }
-        int textWidth = 0;
-        for (const auto& run : line.runs) {
-          textWidth +=
-              renderer.getTextAdvanceX(line.fontId, run.text.c_str(), static_cast<EpdFontFamily::Style>(run.style));
-        }
+        const int textWidth =
+            std::accumulate(line.runs.begin(), line.runs.end(), 0, [this, &line](const int width, const auto& run) {
+              return width + renderer.getTextAdvanceX(line.fontId, run.text.c_str(),
+                                                      static_cast<EpdFontFamily::Style>(run.style));
+            });
         const bool justifyThai = effectiveAlignment == CrossPointSettings::JUSTIFIED && !line.paragraphEnd &&
                                  line.thaiGapCount > 0 && textWidth < contentWidth;
         // Thai has no visible inter-word spaces. Stretching every dictionary
@@ -883,11 +884,10 @@ void TxtReaderActivity::renderPage() {
 }
 
 void TxtReaderActivity::renderStatusBar() const {
-  const float progress = indexingComplete
-                             ? (totalPages > 0 ? (currentPage + 1) * 100.0f / totalPages : 0)
-                             : (txt->getFileSize() > 0
-                                    ? static_cast<float>(pageOffsets[currentPage]) * 100.0f / txt->getFileSize()
-                                    : 0);
+  const float progress =
+      indexingComplete
+          ? (totalPages > 0 ? (currentPage + 1) * 100.0f / totalPages : 0)
+          : (txt->getFileSize() > 0 ? static_cast<float>(pageOffsets[currentPage]) * 100.0f / txt->getFileSize() : 0);
   std::string title;
   if (!indexingComplete) {
     title = std::string(tr(STR_INDEXING)) + " " + std::to_string(indexProgressPercent()) + "%";
