@@ -71,7 +71,7 @@
 ## ภาพตัวอย่าง
 
 <p align="center">
-  <img src="./docs/images/crosspoint-th/cover.jpg" alt="หน้าปกหนังสือบน Xteink ที่ใช้ crosspointTH" width="30%">
+  <img src="./docs/images/crosspoint-th/update-firmware-v1.5.0-th.1.1.png" alt="อัปเดต Firmware ภาษาไทยสำหรับ XTEINK X3 และ X4" width="30%">
   <img src="./docs/images/crosspoint-th/thai-reading-1.jpg" alt="ตัวอย่างการอ่านภาษาไทยบน crosspointTH" width="30%">
   <img src="./docs/images/crosspoint-th/thai-reading-2.jpg" alt="ตัวอย่างการจัดวางข้อความภาษาไทยบน crosspointTH" width="30%">
 </p>
