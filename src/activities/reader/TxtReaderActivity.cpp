@@ -25,7 +25,10 @@
 #include "fontIds.h"
 
 namespace {
-constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
+// Keep each Markdown layout slice small enough that long mixed Thai/ASCII
+// lines return to the activity loop sooner. This improves button latency and
+// caps the temporary word-break tables without changing page offsets.
+constexpr size_t CHUNK_SIZE = 4 * 1024;
 constexpr size_t NO_TABLE_HEADER = std::numeric_limits<size_t>::max();
 constexpr uint32_t NO_TABLE_HEADER_CACHE = std::numeric_limits<uint32_t>::max();
 constexpr int MAX_THAI_JUSTIFY_GAP_PX = 1;
@@ -83,21 +86,43 @@ void TxtReaderActivity::loop() {
 
   const auto touch = ReaderUtils::detectTouchPageTurn(renderer, mappedInput);
   auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
+  bool indexedPage = false;
   prevTriggered = prevTriggered || touch.prev;
   nextTriggered = nextTriggered || touch.next;
-  if (!prevTriggered && !nextTriggered) {
-    return;
-  }
-
   if (prevTriggered && currentPage > 0) {
     currentPage--;
     requestUpdate();
   } else if (nextTriggered) {
-    if (currentPage < totalPages - 1) {
+    if (currentPage + 1 < static_cast<int>(pageOffsets.size())) {
       currentPage++;
+      requestUpdate();
+    } else if (!indexingComplete) {
+      RenderLock lock;
+      // The page is already on the e-paper panel. Release its retained text
+      // runs before laying out another page so both layouts never compete for
+      // the small ESP32-C3 heap.
+      currentPageLines.clear();
+      indexNextPage();
+      indexedPage = true;
+      if (currentPage + 1 < static_cast<int>(pageOffsets.size())) currentPage++;
       requestUpdate();
     } else {
       onGoHome();
+      return;
+    }
+  }
+
+  // Build one page per main-loop iteration. Rendering runs on a separate task,
+  // so take the same lock it uses before touching page offsets or font metrics.
+  // The first page is already readable while this advances in the background.
+  if (!indexingComplete && !indexedPage) {
+    RenderLock lock;
+    currentPageLines.clear();
+    indexNextPage();
+    const int bucket = indexProgressPercent() / 10;
+    if (bucket != lastIndexProgressBucket || indexingComplete) {
+      lastIndexProgressBucket = bucket;
+      requestUpdate();
     }
   }
 }
@@ -133,63 +158,107 @@ void TxtReaderActivity::initializeReader() {
 
   LOG_DBG("TRS", "Viewport: %dx%d, lines per page: %d", viewportWidth, viewportHeight, linesPerPage);
 
-  // Try to load cached page index first
-  if (!loadPageIndexCache()) {
-    // Cache not found, build page index
-    buildPageIndex();
-    // Save to cache for next time
-    savePageIndexCache();
-  }
+  // A valid cache gives an exact page count immediately. Otherwise index one
+  // page now, render it, and continue page-at-a-time from loop() so opening a
+  // long Thai Markdown document no longer blocks on the full book.
+  if (!loadPageIndexCache()) startPageIndex();
 
   // Load saved progress
   loadProgress();
 
+  // A progress file stores a page number. If the layout cache was invalidated
+  // (for example after upgrading firmware or changing font settings), rebuild
+  // only as far as that saved page before the first render. This preserves the
+  // old resume behavior without making every first-time open wait for the
+  // entire document to be indexed.
+  if (restorePageTarget >= 0) {
+    const auto popup = GUI.drawPopup(renderer, tr(STR_INDEXING));
+    int displayedBucket = -1;
+    while (!indexingComplete && static_cast<int>(pageOffsets.size()) <= restorePageTarget) {
+      if (!indexNextPage()) break;
+      const int bucket = indexProgressPercent() / 10;
+      if (bucket != displayedBucket || indexingComplete) {
+        displayedBucket = bucket;
+        GUI.fillPopupProgress(renderer, popup, indexProgressPercent());
+      }
+    }
+    currentPage = std::clamp(restorePageTarget, 0, static_cast<int>(pageOffsets.size()) - 1);
+    restorePageTarget = -1;
+  }
+
   initialized = true;
 }
 
-void TxtReaderActivity::buildPageIndex() {
+void TxtReaderActivity::startPageIndex() {
   pageOffsets.clear();
   pageTableHeaderOffsets.clear();
   pageOffsets.push_back(0);  // First page starts at offset 0
   pageTableHeaderOffsets.push_back(NO_TABLE_HEADER);
+  indexOffset = 0;
+  indexTableHeaderOffset = NO_TABLE_HEADER;
+  indexingFailed = false;
+  indexingComplete = txt->getFileSize() == 0;
+  totalPages = 1;
+  lastIndexProgressBucket = 0;
 
-  size_t offset = 0;
-  size_t tableHeaderOffset = NO_TABLE_HEADER;
+  LOG_DBG("TRS", "Starting incremental page index for %zu bytes...", txt->getFileSize());
+  const auto popup = GUI.drawPopup(renderer, tr(STR_INDEXING));
+  GUI.fillPopupProgress(renderer, popup, 0);
+  if (!indexingComplete) indexNextPage();
+  GUI.fillPopupProgress(renderer, popup, indexProgressPercent());
+}
+
+int TxtReaderActivity::indexProgressPercent() const {
+  const size_t fileSize = txt ? txt->getFileSize() : 0;
+  if (indexingComplete && !indexingFailed) return 100;
+  if (fileSize == 0) return 100;
+  return std::min(99, static_cast<int>((indexOffset * 100ULL) / fileSize));
+}
+
+void TxtReaderActivity::updateEstimatedPageCount() {
+  if (indexingComplete) {
+    totalPages = std::max(1, static_cast<int>(pageOffsets.size()));
+    return;
+  }
+  const size_t completedPages = pageOffsets.size() > 1 ? pageOffsets.size() - 1 : 0;
+  if (completedPages == 0 || indexOffset == 0) {
+    totalPages = std::max(1, static_cast<int>(pageOffsets.size()));
+    return;
+  }
+  const size_t estimate = (txt->getFileSize() * completedPages + indexOffset - 1) / indexOffset;
+  totalPages = std::max(static_cast<int>(pageOffsets.size()), static_cast<int>(estimate));
+}
+
+bool TxtReaderActivity::indexNextPage() {
+  if (indexingComplete) return false;
   const size_t fileSize = txt->getFileSize();
-
-  LOG_DBG("TRS", "Building page index for %zu bytes...", fileSize);
-
-  GUI.drawPopup(renderer, tr(STR_INDEXING));
-
-  while (offset < fileSize) {
-    std::vector<DisplayLine> tempLines;
-    size_t nextOffset = offset;
-    size_t nextTableHeaderOffset = tableHeaderOffset;
-
-    if (!loadPageAtOffset(offset, tempLines, nextOffset, tableHeaderOffset, nextTableHeaderOffset)) {
-      break;
-    }
-
-    if (nextOffset <= offset) {
-      // No progress made, avoid infinite loop
-      break;
-    }
-
-    offset = nextOffset;
-    tableHeaderOffset = nextTableHeaderOffset;
-    if (offset < fileSize) {
-      pageOffsets.push_back(offset);
-      pageTableHeaderOffsets.push_back(tableHeaderOffset);
-    }
-
-    // Yield to other tasks periodically
-    if (pageOffsets.size() % 20 == 0) {
-      vTaskDelay(1);
-    }
+  std::vector<DisplayLine> tempLines;
+  size_t nextOffset = indexOffset;
+  size_t nextTableHeaderOffset = indexTableHeaderOffset;
+  if (!loadPageAtOffset(indexOffset, tempLines, nextOffset, indexTableHeaderOffset, nextTableHeaderOffset) ||
+      nextOffset <= indexOffset) {
+    LOG_ERR("TRS", "Incremental index stopped at byte %zu/%zu", indexOffset, fileSize);
+    indexingFailed = true;
+    indexingComplete = true;
+    updateEstimatedPageCount();
+    return false;
   }
 
-  totalPages = pageOffsets.size();
-  LOG_DBG("TRS", "Built page index: %d pages", totalPages);
+  indexOffset = std::min(nextOffset, fileSize);
+  indexTableHeaderOffset = nextTableHeaderOffset;
+  if (indexOffset < fileSize) {
+    pageOffsets.push_back(indexOffset);
+    pageTableHeaderOffsets.push_back(indexTableHeaderOffset);
+  } else {
+    indexingComplete = true;
+    updateEstimatedPageCount();
+    savePageIndexCache();
+    LOG_DBG("TRS", "Incremental page index complete: %d pages", totalPages);
+    return true;
+  }
+  updateEstimatedPageCount();
+  vTaskDelay(1);
+  return true;
 }
 
 namespace {
@@ -305,13 +374,6 @@ TxtReaderActivity::TableRowResult TxtReaderActivity::appendMarkdownTableFields(c
     std::string remaining = field;
     const size_t fieldFirstLine = pending.size();
     while (!remaining.empty()) {
-      if (measure(remaining) <= viewportWidth) {
-        pending.push_back(makeDisplayLine(remaining, true));
-        fieldBytePos = field.size();
-        remaining.clear();
-        break;
-      }
-
       const auto firstEnd = std::upper_bound(charEnds.begin(), charEnds.end(), fieldBytePos);
       size_t low = static_cast<size_t>(firstEnd - charEnds.begin());
       size_t high = charEnds.size();
@@ -329,6 +391,12 @@ TxtReaderActivity::TableRowResult TxtReaderActivity::appendMarkdownTableFields(c
 
       size_t fittingBytes = fittingEnd > fieldBytePos ? fittingEnd - fieldBytePos : 0;
       if (fittingBytes == 0 && firstEnd != charEnds.end()) fittingBytes = *firstEnd - fieldBytePos;
+      if (fittingEnd == field.size()) {
+        pending.push_back(makeDisplayLine(remaining, true));
+        fieldBytePos = field.size();
+        remaining.clear();
+        break;
+      }
 
       size_t breakPos = 0;
       if (fittingBytes > 0) {
@@ -597,18 +665,6 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
         return width;
       };
 
-      int lineWidth = measure(line);
-
-      if (lineWidth <= viewportWidth) {
-        if (!pushDisplayLine(line, true)) {
-          pageFull = true;
-          break;
-        }
-        lineBytePos = displayLen;  // Consumed entire display content
-        line.clear();
-        break;
-      }
-
       // Binary-search the largest UTF-8 prefix that fits. Measurement shapes
       // the candidate, so reducing O(codepoints) trials to O(log codepoints)
       // is the main indexing-speed win for Thai files.
@@ -629,6 +685,15 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
       size_t fittingBytes = fittingEnd > lineBytePos ? fittingEnd - lineBytePos : 0;
       if (fittingBytes == 0 && firstEnd != sourceCharEnds.end()) {
         fittingBytes = *firstEnd - lineBytePos;  // always consume one complete codepoint
+      }
+      if (fittingEnd == displayLen) {
+        if (!pushDisplayLine(line, true)) {
+          pageFull = true;
+          break;
+        }
+        lineBytePos = displayLen;
+        line.clear();
+        break;
       }
 
       // Prefer the latest natural boundary that fits: an ASCII space or Thai
@@ -665,8 +730,10 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<DisplayLine>
 
     // Determine how much of the source buffer we consumed
     if (line.empty()) {
-      // Fully consumed this source line, move past the newline
-      pos = lineEnd + 1;
+      // Fully consumed this source segment. Advance past a newline only when
+      // one is actually present; a line longer than CHUNK_SIZE continues at
+      // the first byte of the next slice.
+      pos = lineEnd < chunkSize ? lineEnd + 1 : lineEnd;
     } else {
       // Partially consumed - page is full mid-line
       // Move pos to where we stopped in the line (NOT past the line)
@@ -713,7 +780,7 @@ void TxtReaderActivity::render(RenderLock&&) {
 
   // Bounds check
   if (currentPage < 0) currentPage = 0;
-  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  if (currentPage >= static_cast<int>(pageOffsets.size())) currentPage = static_cast<int>(pageOffsets.size()) - 1;
 
   // Load current page content
   size_t offset = pageOffsets[currentPage];
@@ -806,19 +873,28 @@ void TxtReaderActivity::renderPage() {
 
   ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
 
-  if (SETTINGS.textAntiAliasing) {
+  // Capturing the anti-aliasing planes needs several contiguous 8 KB chunks.
+  // Do not compete with background Markdown pagination for those allocations;
+  // the page is redrawn with AA on the next normal render after indexing.
+  if (SETTINGS.textAntiAliasing && indexingComplete) {
     ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });
   }
   // scope destructor clears font cache via FontCacheManager
 }
 
 void TxtReaderActivity::renderStatusBar() const {
-  const float progress = totalPages > 0 ? (currentPage + 1) * 100.0f / totalPages : 0;
+  const float progress = indexingComplete
+                             ? (totalPages > 0 ? (currentPage + 1) * 100.0f / totalPages : 0)
+                             : (txt->getFileSize() > 0
+                                    ? static_cast<float>(pageOffsets[currentPage]) * 100.0f / txt->getFileSize()
+                                    : 0);
   std::string title;
-  if (SETTINGS.statusBarSpec().showsTitle()) {
+  if (!indexingComplete) {
+    title = std::string(tr(STR_INDEXING)) + " " + std::to_string(indexProgressPercent()) + "%";
+  } else if (SETTINGS.statusBarSpec().showsTitle()) {
     title = txt->getTitle();
   }
-  GUI.drawStatusBar(renderer, progress, currentPage + 1, totalPages, title);
+  GUI.drawStatusBar(renderer, progress, currentPage + 1, totalPages, title, 0, 0, true, false, !indexingComplete);
 }
 
 void TxtReaderActivity::saveProgress() const {
@@ -837,14 +913,17 @@ void TxtReaderActivity::loadProgress() {
   if (Storage.openFileForRead("TRS", txt->getCachePath() + "/progress.bin", f)) {
     uint8_t data[4];
     if (f.read(data, 4) == 4) {
-      currentPage = data[0] + (data[1] << 8);
-      if (currentPage >= totalPages) {
-        currentPage = totalPages - 1;
+      const int savedPage = data[0] + (data[1] << 8);
+      if (!indexingComplete && savedPage >= static_cast<int>(pageOffsets.size())) {
+        restorePageTarget = savedPage;
+        currentPage = 0;
+      } else {
+        currentPage = std::min(savedPage, static_cast<int>(pageOffsets.size()) - 1);
       }
       if (currentPage < 0) {
         currentPage = 0;
       }
-      LOG_DBG("TRS", "Loaded progress: page %d/%d", currentPage, totalPages);
+      LOG_DBG("TRS", "Loaded progress: page %d (restore target %d)", currentPage, restorePageTarget);
     }
   }
 }
@@ -937,6 +1016,10 @@ bool TxtReaderActivity::loadPageIndexCache() {
 
   uint32_t numPages;
   serialization::readPod(f, numPages);
+  if (numPages == 0 || numPages > fileSize + 1ULL) {
+    LOG_ERR("TRS", "Invalid page index cache page count: %u", numPages);
+    return false;
+  }
 
   // Read page offsets
   pageOffsets.clear();
@@ -956,6 +1039,10 @@ bool TxtReaderActivity::loadPageIndexCache() {
   }
 
   totalPages = pageOffsets.size();
+  indexOffset = txt->getFileSize();
+  indexTableHeaderOffset = NO_TABLE_HEADER;
+  indexingComplete = true;
+  indexingFailed = false;
   LOG_DBG("TRS", "Loaded page index cache: %d pages", totalPages);
   return true;
 }

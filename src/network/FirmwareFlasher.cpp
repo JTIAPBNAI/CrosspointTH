@@ -58,6 +58,8 @@ const char* resultName(Result r) {
       return "ERASE_FAIL";
     case Result::WRITE_FAIL:
       return "WRITE_FAIL";
+    case Result::VERIFY_FAIL:
+      return "VERIFY_FAIL";
     case Result::OTADATA_FAIL:
       return "OTADATA_FAIL";
   }
@@ -259,7 +261,8 @@ Result flashFromSdPath(const char* sdPath, ProgressCb onProgress, void* ctx, boo
           static_cast<unsigned>(dest->address), static_cast<unsigned>(dest->size));
 
   auto buffer = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[CHUNK]);
-  if (!buffer) {
+  auto verifyBuffer = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[CHUNK]);
+  if (!buffer || !verifyBuffer) {
     LOG_ERR("FLASH", "OOM");
     file.close();
     return Result::OOM;
@@ -294,6 +297,16 @@ Result flashFromSdPath(const char* sdPath, ProgressCb onProgress, void* ctx, boo
       LOG_ERR("FLASH", "write @%u failed", static_cast<unsigned>(streamPos));
       file.close();
       return Result::WRITE_FAIL;
+    }
+    // Do not trust a successful write return alone. A marginal flash chip,
+    // interrupted bus transaction, or low-voltage event can still leave bytes
+    // different from the already-validated source. Verify while both buffers
+    // are available, and never change otadata when any byte differs.
+    if (esp_partition_read(dest, streamPos, verifyBuffer.get(), want) != ESP_OK ||
+        std::memcmp(buffer.get(), verifyBuffer.get(), want) != 0) {
+      LOG_ERR("FLASH", "verify @%u failed", static_cast<unsigned>(streamPos));
+      file.close();
+      return Result::VERIFY_FAIL;
     }
     streamPos += want;
     if (onProgress) onProgress(streamPos, firmwareSize, ctx);

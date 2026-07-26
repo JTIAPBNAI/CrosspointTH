@@ -20,20 +20,14 @@
 
 ## ดาวน์โหลดรุ่นภาษาไทย
 
-รุ่นปัจจุบัน: **v1.4.1-th.3 (Pre-release)**
+รุ่นปัจจุบัน: **v1.5.0-th.1.1 (Pre-release)**
 
-- [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.4.1-th.3/crosspointTH-firmware.bin)
-- [ดูรายละเอียด ไฟล์ตรวจสอบ SHA-256 และไฟล์ประกอบทั้งหมด](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.4.1-th.3)
+- [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.5.0-th.1.1/crosspointTH-firmware.bin)
+- [ดูรายละเอียดและไฟล์ตรวจสอบ SHA-256](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.5.0-th.1.1)
 
 รุ่นนี้ยังระบุเป็น **Pre-release** เพราะยังต้องเก็บผลทดสอบบนเครื่อง X3/X4 จริงเพิ่มเติม GitHub จึงอาจ
 ไม่แสดงรุ่นนี้ในช่อง “Latest release” แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว ไม่ควรเปลี่ยนสถานะเป็น Stable
 จนกว่าจะผ่านการทดสอบบนฮาร์ดแวร์จริงครบถ้วน
-
-SHA-256 ของไฟล์เฟิร์มแวร์:
-
-```text
-36765b33f56ad58bbc6523573ec08c4ea190f7a6c56cf5fad3fa5ce769328e84  crosspointTH-firmware.bin
-```
 
 ## จุดเด่นของ crosspointTH
 
@@ -42,6 +36,9 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 - ตัดคำไทยด้วยพจนานุกรม โดยไม่แยกพยัญชนะ สระ และวรรณยุกต์ออกจาก cluster เดียวกัน
 - จัดตำแหน่งสระบนและวรรณยุกต์ซ้อนหลายชั้น เช่น `อึ่` `อื้อ` `ปึ้` และ `อ่ำ`
 - ลดงานซ้ำขณะสร้าง index ของไฟล์ `.txt` และ `.md` ภาษาไทย
+- เปิดและทำ index EPUB แบบ incremental, ทำงานส่วนที่เหลือเบื้องหลัง และดึงรูปภาพเมื่อถึงหน้าใช้งาน
+  เพื่อลดเวลารอและ peak memory ตอนเปิดหนังสือ
+- มีหน้า **Text Settings** แบบรวมพร้อมตัวอย่างสดสำหรับฟอนต์ ขนาด ระยะ และการจัดแนว
 - แสดง Markdown แบบมี heading, ตัวหนา, ตัวเอียง, inline code, list, quote, ข้อความลิงก์
   และ pipe table ที่จัดแต่ละแถวเป็นข้อมูลเรียงลงมาให้อ่านง่ายบนจอขนาดเล็ก
 - ตารางใน EPUB ใช้ชื่อคอลัมน์จริงจาก `<th>` แทนข้อความ `Tab Row …, Cell …`; ถ้าไฟล์ไม่มี
@@ -50,6 +47,21 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 - จำกัดการขยายแบบ justified ไว้ไม่เกิน 1 พิกเซลต่อขอบเขตคำไทย และไม่ยืดภายใน glyph cluster
 - มีสถิติการอ่านแบบ lightweight สำหรับ EPUB: จำนวนครั้ง เวลาอ่าน หน้าที่อ่านไปข้างหน้า
   และหนังสือที่อ่านจบ โดยเขียนลง SD เมื่อออกจาก reader แทนการเขียนทุกหน้า
+
+## การอ่านไฟล์ Markdown ขนาดใหญ่
+
+เมื่อเปิดไฟล์ `.md` เครื่องจะแสดงหน้าแรกก่อนและทำ index หน้าที่เหลือต่อแบบทยอยทำงาน กรุณารอให้
+สถานะ **Indexing แสดง 100%** ก่อนใช้งานต่อเนื่องหรือเปลี่ยนหน้าอย่างรวดเร็ว ระหว่างทำ index
+คำสั่งเปลี่ยนหน้าอาจตอบสนองช้าชั่วคราว โดยเฉพาะช่วงที่มีบรรทัดยาว ตาราง หรือข้อความภาษาไทยจำนวนมาก
+
+เปอร์เซ็นต์คำนวณจากตำแหน่งข้อมูลในไฟล์ ไม่ใช่เวลาที่เหลือ ดังนั้นช่วง 80–90% อาจใช้เวลานานกว่า
+ช่วงก่อนหน้าได้ หากตัวเลขยังขยับอยู่ถือว่าเครื่องยังทำงานตามปกติ เมื่อครบ 100% ระบบจะเก็บ index
+ไว้และการเปิดครั้งถัดไปจะเร็วขึ้น
+
+สำหรับ Markdown ขนาดใหญ่ แนะนำให้ใช้
+[XTEINK EPUB Optimizer](https://xteinkepuboptimizer.whisperingweekends.com/)
+เพื่อแปลง `.md` เป็น EPUB ที่เหมาะกับอุปกรณ์ก่อนนำลง SD card เครื่องมือนี้ช่วยจัดโครงสร้างหัวข้อ
+ย่อหน้า และตารางให้อ่านง่ายขึ้น และโดยทั่วไปให้ประสบการณ์เปิดไฟล์และเปลี่ยนหน้าที่ลื่นกว่า Markdown โดยตรง
 
 รายละเอียดการทำงานและกรณีทดสอบอยู่ใน
 [เอกสารระบบภาษาไทย](./docs/THAI_SUPPORT.md) และ
@@ -85,23 +97,26 @@ SHA-256 ของไฟล์เฟิร์มแวร์:
 ## ตั้งค่าภาษาไทย
 
 - เลือก **Settings → System → Language → ไทย**
-- เลือกฟอนต์ที่ **Settings → Reader → Font Family** หากฟอนต์ SD ไม่มีภาษาไทย ระบบจะ fallback
+- เลือกฟอนต์ที่ **Settings → Reader → Text Settings → Font** หากฟอนต์ SD ไม่มีภาษาไทย ระบบจะ fallback
   ไปใช้ Noto builtin
-- ปรับ **Reader Line Spacing** เป็น Tight / Normal / Wide
-- ปรับ **Reader Paragraph Alignment** เป็น Justified / Left / Center / Right
+- ปรับ **Text Settings → Layout → Line Spacing** เป็น Tight / Normal / Wide
+- ปรับ **Text Settings → Alignment** เป็น Justified / Left / Center / Right
 
 ไม่มีการเพิ่มระยะห่าง “ระหว่างตัวอักษรไทย” แบบอิสระ เพราะสระและวรรณยุกต์ต้องยึดกับพยัญชนะใน
 cluster เดียวกัน การยืดระหว่างองค์ประกอบเหล่านี้ทำให้ภาษาไทยผิดรูปได้
 
 ## ความปลอดภัยและการย้อนกลับ
 
-- รุ่นนี้คง partition table, bootloader, HAL, power manager, display driver และเส้นทาง flash/OTA
-  ตามฐาน upstream
+- รุ่นนี้คง partition table, bootloader, HAL, power manager, display driver และ OTA ทาง Wi-Fi ตามฐาน
+  upstream; SD updater เพิ่มการอ่าน flash กลับมาเทียบทุก block ก่อนสลับ boot slot
 - เฟิร์มแวร์ release ผ่าน safety gate, unit tests, static checks และการตรวจชนิด/ขนาด image
 - ก่อนติดตั้งควรเก็บ firmware ทางการไว้หนึ่งชุด และสำรองไฟล์สำคัญใน SD card
 - สามารถย้อนกลับด้วยไฟล์ `firmware.bin` จาก
   [CrossPoint Reader Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases)
   ผ่าน SD card updater หรือ USB custom firmware แบบเดียวกัน
+- หาก firmware ใหม่เริ่มถึง `setup()` แต่เปิด UI ไม่ได้ และ slot `ota_0` ยังเป็น firmware เดิมที่ใช้ได้:
+  กด **Back + Up ค้างระหว่างกด Reset** เพื่อสลับกลับไป slot นั้น หาก image เสียจนเริ่ม `setup()` ไม่ได้
+  หรือ `ota_0` ถูกเขียนทับแล้ว ต้องใช้ USB recovery
 
 ไม่มีเฟิร์มแวร์ใดรับประกันความเสี่ยงจากไฟดับ สายหลุด เลือกรุ่นอุปกรณ์ผิด หรือฮาร์ดแวร์เสียหายเดิมได้
 ผู้ใช้รุ่น Pre-release ควรทดสอบอย่างระมัดระวังและรายงานรุ่นเครื่อง ขั้นตอน และ log เมื่อพบปัญหา

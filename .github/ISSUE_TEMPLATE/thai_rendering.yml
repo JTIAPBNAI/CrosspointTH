@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: crosspointTH version / SHA-256
-      placeholder: 1.4.1-th.1 / 0f6b1f...
+      placeholder: 1.5.0-th.1 / <SHA-256>
     validations:
       required: true
   - type: dropdown

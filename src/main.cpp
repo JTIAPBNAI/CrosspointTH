@@ -13,6 +13,7 @@
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <RecoveryBoot.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <builtinFonts/all.h>
@@ -116,7 +117,9 @@ unsigned long t2 = 0;
 // Definitions for SilentRestart.h. RTC_NOINIT survives ESP.restart() but not power loss.
 RTC_NOINIT_ATTR uint32_t silentRebootMagic;
 RTC_NOINIT_ATTR uint32_t silentRebootTarget;
+RTC_NOINIT_ATTR uint32_t forceSplashMagic;
 constexpr uint32_t SILENT_REBOOT_MAGIC = 0xC1EAB007;
+constexpr uint32_t FORCE_SPLASH_MAGIC = 0x51A5F17E;
 constexpr uint32_t SILENT_REBOOT_TARGET_HOME = 0;
 constexpr uint32_t SILENT_REBOOT_TARGET_READER = 1;
 
@@ -158,6 +161,14 @@ void silentRestartToReader() {
   LOG_DBG("MAIN", "Silent restart (target=reader)");
   GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
   delay(50);
+  ESP.restart();
+}
+
+void restartShowingSplash() {
+  // RTC_NOINIT survives ESP.restart(), so this cannot be defeated by an old
+  // showBootScreen=false value on the SD card. setup() consumes it once.
+  silentRebootMagic = 0;
+  forceSplashMagic = FORCE_SPLASH_MAGIC;
   ESP.restart();
 }
 
@@ -273,6 +284,12 @@ void setupDisplayAndFonts(bool seamless = false) {
 void setup() {
   BoardConfig::holdPowerRails();
 
+  // Keep ota_0 as an escape hatch when a newly installed image reaches setup()
+  // but cannot start the normal UI. Hold Back + Up during reset to select it.
+  // Power rails must be held first; this is otherwise deliberately before SDK,
+  // storage, display, settings, and application initialization.
+  freeink::recovery::checkBootCombo();
+
   t1 = millis();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -293,10 +310,12 @@ void setup() {
   // Read-and-clear so a panic later in setup() doesn't loop into silent reboot.
   // Bound the target range too — RTC_NOINIT memory is uninitialized on cold boot.
   const bool isSilentReboot = (silentRebootMagic == SILENT_REBOOT_MAGIC);
+  const bool forceSplash = (forceSplashMagic == FORCE_SPLASH_MAGIC);
   const uint32_t snapshotTarget =
       (isSilentReboot && silentRebootTarget <= SILENT_REBOOT_TARGET_READER) ? silentRebootTarget : 0;
   silentRebootMagic = 0;
   silentRebootTarget = 0;
+  forceSplashMagic = 0;
 
   gpio.begin();
   powerManager.begin();
@@ -318,6 +337,16 @@ void setup() {
 
   SETTINGS.loadFromFile();
   APP_STATE.loadFromFile();
+  const bool firmwareVersionChanged = APP_STATE.lastFirmwareVersion != CROSSPOINTTH_EDITION_VERSION;
+  if (forceSplash || firmwareVersionChanged) {
+    APP_STATE.showBootScreen = true;
+    APP_STATE.lastFirmwareVersion = CROSSPOINTTH_EDITION_VERSION;
+    if (!APP_STATE.saveToFile()) {
+      // The in-memory flag still guarantees the splash for this reboot. A
+      // later successful state save will persist the re-armed default.
+      LOG_ERR("MAIN", "Could not persist firmware-version splash state");
+    }
+  }
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   KOREADER_STORE.loadFromFile();

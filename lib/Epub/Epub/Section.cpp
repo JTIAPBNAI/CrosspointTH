@@ -22,7 +22,10 @@ namespace {
 //      from upstream so caches never validate across firmware swaps in either
 //      direction (rollback to stock CrossPoint simply re-indexes books).
 // v132 (Thai fork): EPUB table cells use semantic column headings.
-constexpr uint8_t SECTION_FILE_VERSION = 132;
+// v133 (Thai fork): ImageBlock serializes the book-internal source href after the cache path
+//      (lazy extraction: images are header-probed at build time and extracted on
+//      first render).
+constexpr uint8_t SECTION_FILE_VERSION = 133;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects

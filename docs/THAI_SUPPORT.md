@@ -79,13 +79,16 @@ Before every production firmware build:
 
 1. Confirm the upstream base commit and FreeInk SDK submodule commit.
 2. Confirm there are no changes to `partitions.csv`, bootloader/platform code, HAL, board configuration,
-   power management, display drivers, OTA boot switching, or firmware flashing code.
+   power management, display drivers, or OTA boot switching. Any firmware-flasher hardening must be
+   separately reviewed and pinned by exact SHA-256 in the release safety gate.
 3. Run all host tests and require every test to pass.
 4. Build the unchanged upstream `gh_release` environment.
 5. Verify the output is an ESP32-C3 DIO app image with a valid checksum/hash.
 6. Verify its size is below the app partition size in `partitions.csv` with a documented margin.
 7. Copy the exact verified image to `crosspointTH-firmware.bin` and publish its byte size and SHA-256.
 8. Keep the official upstream recovery link and rollback instructions in the release notes.
+9. On both X3 and X4 hardware, test one SD upgrade, one read-back failure simulation where practical,
+   the Back+Up escape hatch with a known-good `ota_0`, and one downgrade using the exact release image.
 
 Run `bash scripts/check_release_safety.sh` before a local production build. GitHub release and
 release-candidate workflows run the same gate automatically. The recorded baselines are stored in

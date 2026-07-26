@@ -29,6 +29,7 @@ enum class Result {
   READ_FAIL,
   ERASE_FAIL,
   WRITE_FAIL,
+  VERIFY_FAIL,  // flash read-back differs from the validated SD image
   OTADATA_FAIL,
 };
 
@@ -36,9 +37,10 @@ enum class Result {
 using ProgressCb = void (*)(size_t written, size_t total, void* ctx);
 
 // Open `sdPath`, validate it looks like an ESP32 image, then stream it into the
-// next OTA app partition with interleaved 64 KiB erase + sector writes. On
-// success switches otadata via ota_boot::switchTo. Caller is responsible for
-// ESP.restart() afterwards.
+// next OTA app partition with interleaved 64 KiB erase + sector writes. Every
+// written chunk is read back and compared before the boot target can change.
+// On success switches otadata via ota_boot::switchTo. Caller is responsible
+// for ESP.restart() afterwards.
 //
 // `alreadyValidated` lets callers that have just run `validateImageFile()`
 // themselves (e.g. SdFirmwareUpdateActivity, which validates before showing

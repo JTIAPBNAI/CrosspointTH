@@ -65,22 +65,36 @@ bool containsThai(const std::string& text) {
 }
 
 std::vector<size_t> wordBreakByteOffsets(const std::string& text) {
-  std::vector<ThaiChar> chars;
-  chars.reserve(text.size() / 3);  // Thai codepoints are 3 UTF-8 bytes
+  // Count first, then reserve the exact number of codepoints. Reserving
+  // text.size()/3 is only safe for all-Thai text: a long mixed Thai/ASCII line
+  // can contain considerably more codepoints, causing std::vector to grow to
+  // twice its capacity. On the ESP32-C3 that oversized contiguous allocation
+  // can throw std::bad_alloc even though the exact-sized table would fit.
+  size_t charCount = 0;
   bool hasThai = false;
-
   const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
-  const auto* const start = ptr;
   while (*ptr) {
     const uint32_t cp = utf8NextCodepoint(&ptr);
     if (cp == 0) break;
     if (isThai(cp)) hasThai = true;
+    ++charCount;
+  }
+  if (!hasThai || charCount < 2) return {};
+
+  std::vector<ThaiChar> chars;
+  chars.reserve(charCount);
+  ptr = reinterpret_cast<const unsigned char*>(text.c_str());
+  const auto* const start = ptr;
+  while (*ptr) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
     chars.push_back({cp, static_cast<size_t>(ptr - start)});
   }
-  if (!hasThai || chars.size() < 2) return {};
 
   std::vector<size_t> breaks;
-  breaks.reserve(chars.size() / 3);
+  // OOV Thai can legally break after nearly every grapheme. Reserve the
+  // worst-case result once instead of risking another geometric reallocation.
+  breaks.reserve(chars.size());
 
   size_t i = 0;
   while (i < chars.size()) {

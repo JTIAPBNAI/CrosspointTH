@@ -45,6 +45,12 @@ class TxtReaderActivity final : public Activity {
   int viewportWidth = 0;
   int viewportHeight = 0;
   bool initialized = false;
+  bool indexingComplete = true;
+  bool indexingFailed = false;
+  size_t indexOffset = 0;
+  size_t indexTableHeaderOffset = 0;
+  int lastIndexProgressBucket = -1;
+  int restorePageTarget = -1;
 
   // Cached settings for cache validation (different fonts/margins require re-indexing)
   int cachedFontId = 0;
@@ -66,7 +72,10 @@ class TxtReaderActivity final : public Activity {
   bool readMarkdownTableHeaders(size_t offset, std::vector<std::string>& headers);
   TableRowResult appendMarkdownTableFields(const std::vector<std::string>& fields, std::vector<DisplayLine>& outLines,
                                            int& usedHeight);
-  void buildPageIndex();
+  void startPageIndex();
+  bool indexNextPage();
+  void updateEstimatedPageCount();
+  [[nodiscard]] int indexProgressPercent() const;
   bool loadPageIndexCache();
   void savePageIndexCache() const;
   void saveProgress() const;
@@ -79,6 +88,8 @@ class TxtReaderActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool skipLoopDelay() override { return !indexingComplete; }
+  bool preventAutoSleep() override { return !indexingComplete; }
   bool isReaderActivity() const override { return true; }
   ScreenshotInfo getScreenshotInfo() const override;
 };

@@ -26,7 +26,6 @@ class EpdFontFamily {
   void getTextDimensions(const char* string, int* w, int* h, Style style = REGULAR) const;
   const EpdFontData* getData(Style style = REGULAR) const;
   const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR) const;
-
   /// Glyph together with the EpdFontData that owns its bitmap. The two must
   /// travel as a pair: GfxRenderer::getGlyphBitmap() resolves the bitmap
   /// relative to the owning font's data, so mixing a fallback glyph with this
@@ -51,6 +50,10 @@ class EpdFontFamily {
   /// the nearest registered one; nullptr when none registered (OMIT_FONTS).
   static void registerBuiltinThaiFallback(uint8_t pointSize, const EpdFontFamily* family);
   static const EpdFontFamily* builtinThaiFallback(uint8_t pointSize);
+
+  /// Returns true if the resolved style's font can render `cp` directly
+  /// (interval coverage only — see EpdFont::hasCodepoint).
+  bool hasCodepoint(uint32_t cp, Style style = REGULAR) const;
   int8_t getKerning(uint32_t leftCp, uint32_t rightCp, Style style = REGULAR) const;
   uint32_t applyLigatures(uint32_t cp, const char*& text, Style style = REGULAR) const;
   static constexpr bool hasTextDecoration(const Style style) {
