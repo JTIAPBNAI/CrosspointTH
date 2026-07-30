@@ -1,10 +1,14 @@
-# Crosspoint v.1.5.0-TH.1.1
+# CrosspointTH v1.6.0-th.1.0 Pre-release
 
 เฟิร์มแวร์อ่านหนังสือภาษาไทยสำหรับ **Xteink X3/X4** ปรับแก้โดย
 **JTIAPBN.Ai** เพื่อให้ภาษาไทยแสดงผล ตัดคำ และจัดหน้าได้เหมาะกับจอ e-ink มากขึ้น
 
 > `crosspointTH` เป็นรุ่นชุมชนที่พัฒนาต่อยอดจาก CrossPoint Reader และไม่ใช่รุ่นทางการของ
 > CrossPoint Reader
+
+<p align="center">
+  <img src="./docs/images/crosspoint-th/update-firmware-v1.6.0-th.1.0.png" alt="อัปเดต Firmware ภาษาไทย v1.6.0-th.1.0 สำหรับ XTEINK X3 และ X4" width="820">
+</p>
 
 ## วิดีโอวิธีติดตั้ง
 
@@ -20,12 +24,14 @@
 
 ## ดาวน์โหลดรุ่นภาษาไทย
 
-รุ่นปัจจุบัน: **v1.5.0-th.1.1 (Pre-release)**
+รุ่นปัจจุบัน: **v1.6.0-th.1.0 (Pre-release)**
 
-- [ดาวน์โหลด crosspointTH-firmware.bin โดยตรง](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.5.0-th.1.1/crosspointTH-firmware.bin)
-- [ดูรายละเอียดและไฟล์ตรวจสอบ SHA-256](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.5.0-th.1.1)
+- [ดาวน์โหลด crosspointTH-firmware.bin](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.6.0-th.1.0/crosspointTH-firmware.bin)
+- [ดูรายละเอียดรุ่นและไฟล์ SHA-256](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.6.0-th.1.0)
+- [รายละเอียดแอปและรูปแบบ Flashcards](./docs/APPS.md)
+- [บันทึกการเปลี่ยนแปลง v1.6.0-th.1.0](./docs/releases/v1.6.0-th.1.0.md)
 
-รุ่นนี้ยังระบุเป็น **Pre-release** แม้ไฟล์ดาวน์โหลดจะเผยแพร่แล้ว
+รุ่นนี้ยังระบุเป็น **Pre-release** จนกว่าจะผ่านการทดสอบบนอุปกรณ์ X3/X4 จริง
 
 ## จุดเด่นของ crosspointTH
 
@@ -45,6 +51,10 @@
 - จำกัดการขยายแบบ justified ไว้ไม่เกิน 1 พิกเซลต่อขอบเขตคำไทย และไม่ยืดภายใน glyph cluster
 - มีสถิติการอ่านแบบ lightweight สำหรับ EPUB: จำนวนครั้ง เวลาอ่าน หน้าที่อ่านไปข้างหน้า
   และหนังสือที่อ่านจบ โดยเขียนลง SD เมื่อออกจาก reader แทนการเขียนทุกหน้า
+- เพิ่มเมนู **Apps** ที่แยกจาก reader core: นาฬิกาและปฏิทิน พ.ศ., อากาศ, Pomodoro,
+  Flashcards แบบอ่าน deck จาก SD ทีละบรรทัด และเกม 2048/Sudoku/Minesweeper/Caro/หมากฮอสไทย
+- เพิ่ม Sleep Screen แบบ **ปฏิทิน + สภาพอากาศ** ซึ่งใช้ข้อมูลอากาศล่าสุดจาก cache โดยไม่เปิด Wi-Fi
+  และอัปเดตเวลาทุก 5 นาทีบน X3 พร้อมขยายตัวเลข Pomodoro ให้อ่านได้ชัดจากระยะไกลขึ้น
 
 ## การอ่านไฟล์ Markdown ขนาดใหญ่
 
@@ -71,7 +81,7 @@
 ## ภาพตัวอย่าง
 
 <p align="center">
-  <img src="./docs/images/crosspoint-th/update-firmware-v1.5.0-th.1.1.png" alt="อัปเดต Firmware ภาษาไทยสำหรับ XTEINK X3 และ X4" width="30%">
+  <img src="./docs/images/crosspoint-th/update-firmware-v1.6.0-th.1.0.png" alt="อัปเดต Firmware ภาษาไทย v1.6.0-th.1.0 สำหรับ XTEINK X3 และ X4" width="30%">
   <img src="./docs/images/crosspoint-th/thai-reading-1.jpg" alt="ตัวอย่างการอ่านภาษาไทยบน crosspointTH" width="30%">
   <img src="./docs/images/crosspoint-th/thai-reading-2.jpg" alt="ตัวอย่างการจัดวางข้อความภาษาไทยบน crosspointTH" width="30%">
 </p>

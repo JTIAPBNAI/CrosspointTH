@@ -19,6 +19,8 @@
 #include <builtinFonts/all.h>
 
 #include <cstring>
+#include <ctime>
+#include <esp_sleep.h>
 
 #include "Branding.h"
 #include "CrossPointSettings.h"
@@ -140,6 +142,24 @@ enum class BootResume : uint8_t {
 // startDeepSleep() does not return, so a set latch only ends at the wakeup reset.
 static bool deepSleepInProgress = false;
 
+// X3 can wake briefly at five-minute boundaries to repaint the retained
+// information dashboard. X4 deliberately remains static because its battery
+// latch removes MCU power during deep sleep, so an ESP timer cannot wake it.
+constexpr uint64_t DASHBOARD_REFRESH_SECONDS = 5ULL * 60ULL;
+
+static void armDashboardRefreshTimer() {
+  if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::INFO_DASHBOARD || !gpio.deviceIsX3()) return;
+
+  uint64_t delaySeconds = DASHBOARD_REFRESH_SECONDS;
+  const time_t now = time(nullptr);
+  if (now > 0) {
+    const uint64_t remainder = static_cast<uint64_t>(now) % DASHBOARD_REFRESH_SECONDS;
+    delaySeconds = remainder == 0 ? DASHBOARD_REFRESH_SECONDS : DASHBOARD_REFRESH_SECONDS - remainder;
+  }
+  esp_sleep_enable_timer_wakeup(delaySeconds * 1000000ULL);
+  LOG_DBG("SLP", "Dashboard refresh armed in %llu seconds", static_cast<unsigned long long>(delaySeconds));
+}
+
 void silentRestart() {
   if (deepSleepInProgress) return;  // sleeping supersedes the heap-defrag reboot
   silentRebootTarget = SILENT_REBOOT_TARGET_HOME;
@@ -234,6 +254,7 @@ void enterDeepSleep(bool fromTimeout = false) {
 
   halTiltSensor.deepSleep();
   display.deepSleep();
+  armDashboardRefreshTimer();
   LOG_DBG("MAIN", "Entering deep sleep");
 
   powerManager.startDeepSleep(gpio);
@@ -353,6 +374,23 @@ void setup() {
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
+
+  // A dashboard timer wake is maintenance, not a user wake. Repaint from the
+  // RTC without starting Wi-Fi or routing to Home/Reader, then sleep again.
+  // APP_STATE is deliberately preserved for the next power-button wake.
+  const bool dashboardTimerWake =
+      esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER &&
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::INFO_DASHBOARD && gpio.deviceIsX3();
+  if (dashboardTimerWake) {
+    LOG_DBG("SLP", "Refreshing information dashboard from timer wake");
+    setupDisplayAndFonts(true);
+    deepSleepInProgress = true;
+    activityManager.goToSleep(false);
+    halTiltSensor.deepSleep();
+    display.deepSleep();
+    armDashboardRefreshTimer();
+    powerManager.startDeepSleep(gpio);
+  }
 
   const auto wakeupReason = gpio.getWakeupReason();
   switch (wakeupReason) {

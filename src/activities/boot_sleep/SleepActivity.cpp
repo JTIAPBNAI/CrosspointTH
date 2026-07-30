@@ -4,18 +4,50 @@
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 #include <Txt.h>
 #include <Xtc.h>
 
+#include <cstdio>
+#include <ctime>
+
 #include "Branding.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "apps/AppSettings.h"
+#include "activities/apps/WeatherCacheStore.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+
+namespace {
+constexpr time_t VALID_TIME = 1704067200;
+const char* THAI_MONTHS[] = {"มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                             "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"};
+const char* ENGLISH_MONTHS[] = {"January", "February", "March", "April", "May", "June",
+                                "July", "August", "September", "October", "November", "December"};
+const char* THAI_DAYS[] = {"อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"};
+const char* ENGLISH_DAYS[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+
+bool leapYear(int year) { return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0); }
+int monthDays(int year, int month) {
+  static constexpr int DAYS[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  return month == 1 && leapYear(year) ? 29 : DAYS[month];
+}
+
+const char* weatherCondition(uint8_t code) {
+  if (code == 0) return tr(STR_APP_WEATHER_CLEAR);
+  if (code <= 3) return tr(STR_APP_WEATHER_CLOUDY);
+  if (code == 45 || code == 48) return tr(STR_APP_WEATHER_FOG);
+  if ((code >= 51 && code <= 67)) return tr(STR_APP_WEATHER_RAIN);
+  if (code >= 80 && code <= 82) return tr(STR_APP_WEATHER_SHOWERS);
+  if (code >= 95) return tr(STR_APP_WEATHER_STORM);
+  return tr(STR_APP_WEATHER_CLOUDY);
+}
+}  // namespace
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
@@ -51,6 +83,8 @@ void SleepActivity::onEnter() {
       } else {
         return renderCustomSleepScreen();
       }
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::INFO_DASHBOARD):
+      return renderInfoDashboardSleepScreen();
     default:
       return renderDefaultSleepScreen();
   }
@@ -338,5 +372,92 @@ void SleepActivity::renderLastScreenSleepScreen() const {
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+}
+
+void SleepActivity::renderInfoDashboardSleepScreen() const {
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  renderer.clearScreen();
+
+  const time_t epoch = time(nullptr);
+  struct tm local{};
+  const bool validTime = epoch >= VALID_TIME;
+  if (validTime) {
+    const int quarterHours = static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48;
+    const time_t localEpoch = epoch + quarterHours * 15 * 60;
+    gmtime_r(&localEpoch, &local);
+  }
+
+  char timeText[12] = "--:--";
+  if (validTime) snprintf(timeText, sizeof(timeText), "%02d:%02d", local.tm_hour, local.tm_min);
+  renderer.drawCenteredText(NOTOSANS_18_FONT_ID, 24, timeText, true, EpdFontFamily::BOLD);
+
+  char batteryText[24];
+  snprintf(batteryText, sizeof(batteryText), "%s %u%%", tr(STR_BATTERY), powerManager.getBatteryPercentage());
+  renderer.drawText(SMALL_FONT_ID, width - 12 - renderer.getTextWidth(SMALL_FONT_ID, batteryText), 22, batteryText);
+
+  if (validTime) {
+    const bool thai = I18N.getLanguage() == Language::TH;
+    char title[96];
+    snprintf(title, sizeof(title), "%s %d", thai ? THAI_MONTHS[local.tm_mon] : ENGLISH_MONTHS[local.tm_mon],
+             local.tm_year + 1900 + (thai ? 543 : 0));
+    renderer.drawCenteredText(UI_10_FONT_ID, 92, title, true, EpdFontFamily::BOLD);
+
+    struct tm first = local;
+    first.tm_mday = 1;
+    first.tm_hour = 12;
+    mktime(&first);
+    const int gridTop = 132;
+    const int cellW = width / 7;
+    const int cellH = std::max(38, std::min(55, (height - 330) / 7));
+    for (int col = 0; col < 7; ++col) {
+      const char* day = thai ? THAI_DAYS[col] : ENGLISH_DAYS[col];
+      renderer.drawText(SMALL_FONT_ID, col * cellW + (cellW - renderer.getTextWidth(SMALL_FONT_ID, day)) / 2,
+                        gridTop, day, true, EpdFontFamily::BOLD);
+    }
+    const int count = monthDays(local.tm_year + 1900, local.tm_mon);
+    for (int day = 1; day <= count; ++day) {
+      const int slot = first.tm_wday + day - 1;
+      const int row = slot / 7;
+      const int col = slot % 7;
+      const int x0 = col * cellW;
+      const int y0 = gridTop + cellH + row * cellH;
+      const bool today = day == local.tm_mday;
+      if (today) renderer.fillRect(x0 + 5, y0 - 3, cellW - 10, cellH - 2, true);
+      char text[4];
+      snprintf(text, sizeof(text), "%d", day);
+      renderer.drawText(UI_10_FONT_ID, x0 + (cellW - renderer.getTextWidth(UI_10_FONT_ID, text)) / 2, y0, text,
+                        !today, today ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+    }
+  } else {
+    renderer.drawCenteredText(UI_10_FONT_ID, 130, tr(STR_APP_CLOCK_NEEDS_SYNC));
+  }
+
+  APP_SETTINGS.loadFromFile();
+  WeatherCacheData weather;
+  const int weatherTop = height - 205;
+  renderer.drawLine(20, weatherTop, width - 20, weatherTop, 2, true);
+  renderer.drawCenteredText(UI_10_FONT_ID, weatherTop + 22, tr(STR_APP_WEATHER), true, EpdFontFamily::BOLD);
+  if (loadWeatherCache(APP_SETTINGS.weatherLocation, weather)) {
+    char value[80];
+    snprintf(value, sizeof(value), "%.1f °C   %s %u%%", weather.temperatureTenths / 10.0f,
+             tr(STR_APP_HUMIDITY), weather.humidity);
+    renderer.drawCenteredText(UI_10_FONT_ID, weatherTop + 68, value);
+    renderer.drawCenteredText(SMALL_FONT_ID, weatherTop + 108, weatherCondition(weather.weatherCode));
+    if (weather.updatedAt >= VALID_TIME) {
+      struct tm updated{};
+      const int quarterHours = static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48;
+      const time_t updatedLocal = weather.updatedAt + quarterHours * 15 * 60;
+      gmtime_r(&updatedLocal, &updated);
+      char cachedAt[48];
+      snprintf(cachedAt, sizeof(cachedAt), "%s %02d:%02d", tr(STR_APP_WEATHER_CACHED), updated.tm_hour,
+               updated.tm_min);
+      renderer.drawCenteredText(SMALL_FONT_ID, weatherTop + 140, cachedAt);
+    }
+  } else {
+    UITheme::drawCenteredWrappedText(renderer, Rect{24, weatherTop + 56, width - 48, 90}, UI_10_FONT_ID,
+                                     tr(STR_APP_WEATHER_PRESS_REFRESH), 3);
+  }
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
