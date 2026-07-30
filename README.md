@@ -1,4 +1,4 @@
-# CrosspointTH v1.6.0-th.1.0 Pre-release
+# CrosspointTH v1.6.0-th.1.0
 
 เฟิร์มแวร์อ่านหนังสือภาษาไทยสำหรับ **Xteink X3/X4** ปรับแก้โดย
 **JTIAPBN.Ai** เพื่อให้ภาษาไทยแสดงผล ตัดคำ และจัดหน้าได้เหมาะกับจอ e-ink มากขึ้น
@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="https://youtu.be/wXqNoefhf3M">
-    <img src="https://img.youtube.com/vi/wXqNoefhf3M/hqdefault.jpg" alt="วิดีโอวิธีติดตั้ง crosspointTH" width="760">
+    <img src="./docs/images/crosspoint-th/update-firmware-v1.6.0-th.1.0.png" alt="วิดีโอวิธีติดตั้ง crosspointTH v1.6.0-th.1.0" width="760">
   </a>
 </p>
 
@@ -24,14 +24,15 @@
 
 ## ดาวน์โหลดรุ่นภาษาไทย
 
-รุ่นปัจจุบัน: **v1.6.0-th.1.0 (Pre-release)**
+รุ่นปัจจุบัน: **v1.6.0-th.1.0 (Release)**
 
 - [ดาวน์โหลด crosspointTH-firmware.bin](https://github.com/JTIAPBNAI/CrosspointTH/releases/download/v1.6.0-th.1.0/crosspointTH-firmware.bin)
 - [ดูรายละเอียดรุ่นและไฟล์ SHA-256](https://github.com/JTIAPBNAI/CrosspointTH/releases/tag/v1.6.0-th.1.0)
 - [รายละเอียดแอปและรูปแบบ Flashcards](./docs/APPS.md)
 - [บันทึกการเปลี่ยนแปลง v1.6.0-th.1.0](./docs/releases/v1.6.0-th.1.0.md)
 
-รุ่นนี้ยังระบุเป็น **Pre-release** จนกว่าจะผ่านการทดสอบบนอุปกรณ์ X3/X4 จริง
+รุ่นนี้ผ่านการทดสอบการใช้งานและเผยแพร่เป็นรุ่นปกติแล้ว แต่ยังแนะนำให้สำรองไฟล์สำคัญใน SD card
+และเก็บ firmware รุ่นเดิมไว้สำหรับย้อนกลับก่อนอัปเดต
 
 ## จุดเด่นของ crosspointTH
 
@@ -130,7 +131,7 @@ cluster เดียวกัน การยืดระหว่างอง�
   หรือ `ota_0` ถูกเขียนทับแล้ว ต้องใช้ USB recovery
 
 ไม่มีเฟิร์มแวร์ใดรับประกันความเสี่ยงจากไฟดับ สายหลุด เลือกรุ่นอุปกรณ์ผิด หรือฮาร์ดแวร์เสียหายเดิมได้
-ผู้ใช้รุ่น Pre-release ควรทดสอบอย่างระมัดระวังและรายงานรุ่นเครื่อง ขั้นตอน และ log เมื่อพบปัญหา
+ผู้ใช้ควรอัปเดตอย่างระมัดระวังและรายงานรุ่นเครื่อง ขั้นตอน และ log เมื่อพบปัญหา
 
 ## เอกสาร
 
